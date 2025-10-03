@@ -1,0 +1,79 @@
+sites:
+  - url: https://www.gov.ie/en/
+    name: home page
+  - url: https://www.gov.ie/en/news/
+    name: news
+  - url: https://www.gov.ie/en/services/
+    name: services
+  - url: https://gov.ie/en/departments/
+    name: departments
+  - url: https://gov.ie/en/department-of-finance/campaigns/budget-2025/
+    namd: budget 2025
+  - url: https://gov.ie/en/department-of-housing-local-government-and-heritage/campaigns/housing-for-all/
+    name: housing for all
+  - url: https://gov.ie/en/department-of-the-taoiseach/campaigns/migration-and-ireland/
+    name: migration and ireland
+  - url: https://gov.ie/en/department-of-public-expenditure-infrastructure-public-service-reform-and-digitalisation/services/where-your-money-goes/
+    name: where your money goes
+  - url: https://gov.ie/en/department-of-climate-energy-and-the-environment/publications/climate-action-plan-2025/
+    name: climate action plan
+  - url: https://www.gov.ie/en/department-of-finance/
+    name: department of finance
+  - url: https://www.gov.ie/en/department-of-foreign-affairs/
+    name: department of foreign affairs
+  - url: https://www.gov.ie/en/department-of-health/
+    name: department of health
+  - url: https://www.gov.ie/en/department-of-housing-local-government-and-heritage/
+    name: department of housing
+  - url: https://www.gov.ie/en/treaty-series/
+    name: treaty series
+  - url: https://www.gov.ie/en/foreshore-notices/
+    name: foreshore notices
+  - url: https://www.gov.ie/en/policies/
+    name: policies
+  - url: https://www.gov.ie/en/publications/
+    name: publications
+  - url: https://www.gov.ie/en/aquaculture-licences/
+    name: aquaculture licences
+  - url: https://www.gov.ie/en/ogp-frameworks/
+    name: ogp frameworks
+  - url: https://www.gov.ie/en/services/
+    name: gov services
+  - url: https://www.gov.ie/en/circulars/
+    name: circulars
+  - url: https://www.gov.ie/en/coroner-cases/
+    name: coroner cases
+  - url: https://www.gov.ie/en/consultations/
+    name: consultations
+  - url: https://www.gov.ie/en/intreo-centres/
+    name: intreo centres
+  - url: https://www.gov.ie/en/oireachtas-enquiries/
+    name: oireachtas enquiries
+  - url: https://www.gov.ie/en/coroner-districts/
+    name: coroner districts
+  - url: https://www.gov.ie/en/igees-publications/
+    name: igees publications
+  - url: https://www.gov.ie/en/search/
+    name: search
+  - url: https://www.gov.ie/en/schools/
+    name: schools
+  - url: https://www.gov.ie/en/school-reports/
+    name: school reports
+  - url: https://www.gov.ie/en/colaiste-gaeilge-reports/
+    name: colaiste gaeilge reports
+  - url: https://www.gov.ie/en/youthreach-reports/
+    name: youthreach reports
+  - url: https://www.gov.ie/en/early-years-reports/
+    name: early years reports
+  - url: https://www.gov.ie/en/department-of-health/campaigns/health-research-and-statistics/
+    name: health research and statistics
+  - url: https://www.gov.ie/en/office-of-public-works/campaigns/opw-biodiversity/
+    name: opw biodiversity
+  - url: https://www.gov.ie/en/department-of-enterprise-tourism-and-employment/campaigns/artificial-intelligence-ai-advisory-council/
+    name: artificial intelligence ai advisory council
+  - url: https://www.gov.ie/en/department-of-climate-energy-and-the-environment/campaigns/eu-climate-neutral-and-smart-cities-mission/
+    name: eu climate neutral and smart cities mission
+  - url: https://www.gov.ie/en/victims-charter/campaigns/the-victims-charter/
+    name: the victims charter
+  - url: https://www.gov.ie/en/department-of-justice-home-affairs-and-migration/campaigns/community-safety/
+    name: community safety

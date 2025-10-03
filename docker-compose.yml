@@ -1,0 +1,43 @@
+services:
+  test-ui:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    env_file:
+      - .env
+    volumes:
+      # Map local data directory for input/output
+      - ./data:/data
+      # Map the sites configuration file
+      - ./test_ui/sites.yml:/app/sites.yml:ro
+      # Mount source code for development (no rebuild needed for code changes)
+      - ./test_ui:/app/test_ui
+    environment:
+      # The URL for the AI analyzer service, accessible via the internal Docker network
+      - AI_ANALYZER_SERVICE_URL=http://ai-analyzer:3000
+    depends_on:
+      ai-analyzer:
+        condition: service_healthy
+    networks:
+      - test-ui-network
+    # By default, the service does nothing. We will use `docker compose run` to execute commands.
+    command: tail -f /dev/null
+
+  ai-analyzer:
+    build: ./ai_analyzer
+    env_file:
+      - .env
+    ports:
+      - "3000:3000"
+    networks:
+      - test-ui-network
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:3000/health" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+networks:
+  test-ui-network:
+    driver: bridge

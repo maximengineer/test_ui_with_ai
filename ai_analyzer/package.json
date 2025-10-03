@@ -1,0 +1,13 @@
+{
+  "name": "ai-analyzer-service",
+  "version": "1.0.0",
+  "description": "A Node.js service to proxy requests to the Gemini API for visual regression analysis.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "@google/generative-ai": "^0.1.1",
+    "express": "^4.18.2"
+  }
+}
