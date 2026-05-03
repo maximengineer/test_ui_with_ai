@@ -1,0 +1,5 @@
+{
+  "schema": "ai_response",
+  "valid": true,
+  "note": "Minimal AIAnalysisResponse exercising every required field. Both validators must accept; covers the discriminator literal (analysis_success), enum-constrained severity/business_impact, and the [0,1] bound on confidence_score."
+}

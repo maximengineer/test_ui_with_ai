@@ -1,0 +1,62 @@
+{
+  "changes_detected": true,
+  "change_types": ["content", "structure", "structure_detail", "attributes"],
+  "changes": [
+    {
+      "type": "content",
+      "element": "title",
+      "change": "text_modified",
+      "description": "Page title changed",
+      "old_value": "Welcome | Acme",
+      "new_value": "About Us | Acme",
+      "impact": "medium"
+    },
+    {
+      "type": "structure",
+      "element": "div",
+      "change": "added_element",
+      "description": "Added 3 div element(s)",
+      "old_value": 12,
+      "new_value": 15,
+      "impact": "low",
+      "code_examples_count": 3
+    },
+    {
+      "type": "structure_detail",
+      "element": "section.hero",
+      "change": "element_added",
+      "description": "New hero section inserted before <main>",
+      "code_snippet": "<section class=\"hero\"><h1>About</h1><p>Learn about our mission.</p></section>",
+      "position": "before:main",
+      "impact": "high"
+    },
+    {
+      "type": "attributes",
+      "element": "meta[viewport]",
+      "change": "meta_modified",
+      "description": "Meta tag 'viewport' modified",
+      "old_value": "width=device-width, initial-scale=1",
+      "new_value": "width=device-width, initial-scale=1.0, maximum-scale=1.0",
+      "impact": "low"
+    },
+    {
+      "type": "content",
+      "element": "body",
+      "change": "content_modified",
+      "description": "Text content changed significantly (4521 → 5832 chars)",
+      "old_value": "4521 characters",
+      "new_value": "5832 characters",
+      "impact": "medium"
+    }
+  ],
+  "summary": {
+    "total_changes": 5,
+    "structural_changes": 1,
+    "content_changes": 2,
+    "meta_changes": 1,
+    "navigation_changes": 0,
+    "high_impact_changes": 1,
+    "medium_impact_changes": 2,
+    "severity": "high"
+  }
+}

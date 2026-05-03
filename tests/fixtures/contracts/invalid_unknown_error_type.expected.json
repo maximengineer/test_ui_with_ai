@@ -1,0 +1,5 @@
+{
+  "schema": "ai_error",
+  "valid": false,
+  "note": "error_type='kafkaesque_void' is not in the enum (schema_invalid|timeout|rate_limited|provider_error|response_invalid|config_error|unknown). Both validators must reject; if a server starts emitting unknown error types we want a contract failure, not a silent bucket leak."
+}

@@ -1,0 +1,5 @@
+{
+  "schema": "ai_error",
+  "valid": true,
+  "note": "Server-emitted AIAnalysisError on the wire (Phase A.1.8 — typed failure, not synthetic SAFE). Exercises the analysis_error discriminator and the error_type enum's 'rate_limited' value."
+}

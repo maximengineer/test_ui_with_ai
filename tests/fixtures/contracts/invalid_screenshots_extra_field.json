@@ -1,0 +1,27 @@
+{
+  "schema_version": "2026-04-30.1",
+  "request_id": "01HXYZ-shots-extra-deadbeef",
+  "url": "https://example.com/x",
+  "structured_data": {
+    "change_summary": {
+      "overall_assessment": {"changes_detected": false, "change_severity": "none", "user_impact": "none", "requires_review": false},
+      "change_categories": {
+        "visual": {"screenshot_similarity": 1.0, "visual_changes": false, "layout_shifts": false},
+        "content": {"title_changed": false, "text_content_changed": false, "structure_changed": false},
+        "technical": {"html_changes": false, "css_changes": false, "js_changes": false, "asset_changes": false}
+      },
+      "affected_components": [],
+      "recommendation": "",
+      "ai_analysis_priority": "none"
+    },
+    "html_changes": {"changes_detected": false, "change_types": [], "changes": [], "summary": {}},
+    "css_changes": {"changes_detected": false, "change_types": [], "files_changed": [], "changes": [], "summary": {}},
+    "js_changes": {"changes_detected": false, "change_types": [], "files_changed": [], "changes": [], "summary": {}}
+  },
+  "screenshots": {
+    "baseline": null,
+    "current": null,
+    "visual_diff": null,
+    "thumbnail": "extra-field-not-on-Screenshots-model"
+  }
+}

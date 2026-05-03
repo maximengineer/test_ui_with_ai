@@ -1,0 +1,5 @@
+{
+  "schema": "ai_disabled",
+  "valid": false,
+  "note": "Validates against the ai_disabled schema with result_type='no_changes' — wrong discriminator literal. Pydantic AIDisabledMarker enforces Literal['ai_disabled']; ajv enforces const. Both must reject; this guards against marker files being miscategorized if the discriminator is ever silently swapped."
+}

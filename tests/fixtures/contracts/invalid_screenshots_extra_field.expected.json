@@ -1,0 +1,5 @@
+{
+  "schema": "ai_request",
+  "valid": false,
+  "note": "Extra field on the nested Screenshots model ('thumbnail'). Verifies that extra=forbid / additionalProperties:false propagates through nested objects, not just the top-level."
+}

@@ -1,0 +1,29 @@
+{
+  "overall_assessment": {
+    "changes_detected": true,
+    "change_severity": "high",
+    "user_impact": "high",
+    "requires_review": true
+  },
+  "change_categories": {
+    "visual": {
+      "screenshot_similarity": 0.87,
+      "visual_changes": true,
+      "layout_shifts": false
+    },
+    "content": {
+      "title_changed": false,
+      "text_content_changed": false,
+      "structure_changed": false
+    },
+    "technical": {
+      "html_changes": true,
+      "css_changes": true,
+      "js_changes": false,
+      "asset_changes": false
+    }
+  },
+  "affected_components": ["visual_layout", "content", "structure", "styling"],
+  "recommendation": "Review visual changes in layout; Verify styling consistency",
+  "ai_analysis_priority": "high"
+}

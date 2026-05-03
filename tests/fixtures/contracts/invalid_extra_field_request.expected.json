@@ -1,0 +1,5 @@
+{
+  "schema": "ai_request",
+  "valid": false,
+  "note": "Top-level extra field 'extra_unknown_field'. Pydantic _StrictModel uses extra='forbid' and ajv runs in strict mode (additionalProperties:false enforced). Both must reject — this catches drift if either side is ever loosened."
+}

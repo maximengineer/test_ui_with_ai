@@ -1,0 +1,5 @@
+{
+  "schema": "ai_response",
+  "valid": false,
+  "note": "overall_severity='ERROR' is the legacy synthetic value killed in Phase A.1.8. The contract now only allows CRITICAL/WARNING/SAFE — actual failures use AIAnalysisError. This fixture pins that constraint so the legacy value can never sneak back in."
+}

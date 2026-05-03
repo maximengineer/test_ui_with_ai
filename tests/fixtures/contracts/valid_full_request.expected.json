@@ -1,0 +1,5 @@
+{
+  "schema": "ai_request",
+  "valid": true,
+  "note": "Complete AIAnalysisRequest with all required fields, all-null screenshots (allowed by contract), and minimal structured_data exercising required nested shapes."
+}

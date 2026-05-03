@@ -1,0 +1,27 @@
+{
+  "changes_detected": true,
+  "change_types": ["layout", "styling"],
+  "files_changed": ["header.css", "main.css"],
+  "changes": [
+    {
+      "file": "header.css",
+      "change_type": "added",
+      "description": "New CSS file added: header.css",
+      "impact": "layout",
+      "severity": "medium"
+    },
+    {
+      "file": "main.css",
+      "change_type": "modified",
+      "description": "CSS file modified: main.css",
+      "impact": "layout",
+      "severity": "medium"
+    }
+  ],
+  "summary": {
+    "total_changes": 2,
+    "layout_affecting": 2,
+    "visual_only": 0,
+    "severity": "medium"
+  }
+}

@@ -1,0 +1,77 @@
+{
+  "metadata": {
+    "timestamp": "30-04-2026 14:23:11",
+    "url": "https://example.com/about",
+    "baseline_path": "/data/baseline/30-04-2026",
+    "current_path": "/data/current/30-04-2026",
+    "output_path": "/data/comparator/30-04-2026/example.com_about"
+  },
+  "result": {
+    "url": "https://example.com/about",
+    "changes_detected": true,
+    "diffs_created": true,
+    "screenshot": {
+      "ssim_score": 0.87,
+      "visual_changes": true,
+      "dimensions_changed": false,
+      "diff_image_path": "/data/comparator/30-04-2026/example.com_about/diffs/visual_diff.png"
+    },
+    "dom": {
+      "title": {
+        "baseline": "Welcome | Acme",
+        "current": "About Us | Acme",
+        "changed": true
+      },
+      "structure": {
+        "element_changes": [],
+        "specific_changes": [],
+        "tag_counts": {
+          "baseline": {"div": 12, "section": 2},
+          "current": {"div": 15, "section": 3}
+        }
+      },
+      "content": {
+        "baseline_length": 4521,
+        "current_length": 5832,
+        "length_change": 1311,
+        "significant_change": true
+      },
+      "meta": {
+        "changes": []
+      },
+      "navigation": {
+        "changes": []
+      },
+      "has_changes": true
+    },
+    "assets": {
+      "css": {
+        "added": ["header.css"],
+        "removed": [],
+        "changed": ["main.css"],
+        "has_changes": true,
+        "total_changes": 2,
+        "content_changes": [],
+        "detailed_analysis": {}
+      },
+      "js": {
+        "added": [],
+        "removed": [],
+        "changed": [],
+        "has_changes": false,
+        "total_changes": 0,
+        "content_changes": [],
+        "detailed_analysis": {}
+      },
+      "media": {
+        "added": [],
+        "removed": [],
+        "changed": [],
+        "has_changes": false,
+        "total_changes": 0,
+        "content_changes": [],
+        "detailed_analysis": {}
+      }
+    }
+  }
+}

@@ -1,0 +1,5 @@
+{
+  "schema": "no_changes",
+  "valid": true,
+  "note": "NoChangesMarker — comparator found nothing; AI was not invoked. Phase A.1.9 marker file. checked_at uses the project's DD-MM-YYYY HH:MM:SS format from settings.get_current_datetime()."
+}

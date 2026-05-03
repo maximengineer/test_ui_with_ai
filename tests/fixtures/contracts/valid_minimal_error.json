@@ -1,0 +1,10 @@
+{
+  "schema_version": "2026-04-30.1",
+  "result_type": "analysis_error",
+  "request_id": "01HXYZ-err-uuid-deadbeef",
+  "model": "gemini-2.5-pro",
+  "prompt_sha256": "3333333333333333333333333333333333333333333333333333333333333333",
+  "error_type": "rate_limited",
+  "retryable": true,
+  "details": "Provider returned 429; honoring Retry-After: 30s before retry"
+}

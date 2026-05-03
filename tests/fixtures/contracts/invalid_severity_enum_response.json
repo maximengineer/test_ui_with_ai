@@ -1,0 +1,12 @@
+{
+  "schema_version": "2026-04-30.1",
+  "result_type": "analysis_success",
+  "request_id": "01HXYZ-bad-sev-deadbeef",
+  "model": "gemini-2.5-pro",
+  "prompt_sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+  "overall_severity": "ERROR",
+  "business_impact": "HIGH",
+  "detailed_analysis": {"visual_changes": [], "functional_impact": [], "technical_correlation": []},
+  "recommendations": {"immediate_actions": [], "review_items": [], "acceptance_criteria": ""},
+  "confidence_score": 0.5
+}

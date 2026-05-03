@@ -1,0 +1,28 @@
+{
+  "business_impact": "MEDIUM",
+  "confidence_score": 0.85,
+  "detailed_analysis": {
+    "functional_impact": [
+      "No interactive features affected"
+    ],
+    "technical_correlation": [
+      "CSS .hero margin-top increased"
+    ],
+    "visual_changes": [
+      "Hero section moved 40px down"
+    ]
+  },
+  "model": "gemini-test-model",
+  "overall_severity": "WARNING",
+  "prompt_sha256": "abc1230000000000000000000000000000000000000000000000000000000000",
+  "recommendations": {
+    "acceptance_criteria": "Accept if hero positioning is part of design refresh",
+    "immediate_actions": [],
+    "review_items": [
+      "Confirm intentional layout shift"
+    ]
+  },
+  "request_id": "<NORMALIZED>",
+  "result_type": "analysis_success",
+  "schema_version": "2026-04-30.1"
+}

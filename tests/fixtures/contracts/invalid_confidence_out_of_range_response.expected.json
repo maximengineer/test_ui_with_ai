@@ -1,0 +1,5 @@
+{
+  "schema": "ai_response",
+  "valid": false,
+  "note": "confidence_score=1.5 violates the [0,1] bound. Pydantic uses Field(ge=0.0, le=1.0); ajv enforces minimum/maximum from the exported schema. Both must reject — guards against accidental loosening."
+}

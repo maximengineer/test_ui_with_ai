@@ -1,0 +1,57 @@
+{
+  "change_types": [
+    "content",
+    "structure",
+    "attributes"
+  ],
+  "changes": [
+    {
+      "change": "text_modified",
+      "description": "Page title changed",
+      "element": "title",
+      "impact": "medium",
+      "new_value": "Welcome v2",
+      "old_value": "Welcome",
+      "type": "content"
+    },
+    {
+      "change": "added_element",
+      "code_examples_count": 1,
+      "description": "Added 1 div element(s)",
+      "element": "div",
+      "impact": "low",
+      "new_value": 3,
+      "old_value": 2,
+      "type": "structure"
+    },
+    {
+      "change": "added",
+      "code_snippet": "<div>Three</div>",
+      "description": "New div element added",
+      "element": "div",
+      "impact": "low",
+      "position": "example_1",
+      "type": "structure_detail"
+    },
+    {
+      "change": "meta_changed",
+      "description": "Meta tag 'description' changed",
+      "element": "meta[description]",
+      "impact": "high",
+      "new_value": "Updated page",
+      "old_value": "Original page",
+      "type": "attributes"
+    }
+  ],
+  "changes_detected": true,
+  "summary": {
+    "content_changes": 1,
+    "high_impact_changes": 1,
+    "medium_impact_changes": 1,
+    "meta_changes": 1,
+    "navigation_changes": 0,
+    "severity": "high",
+    "structural_changes": 1,
+    "total_changes": 4
+  }
+}

@@ -1,0 +1,20 @@
+{
+  "schema_version": "2026-04-30.1",
+  "result_type": "analysis_success",
+  "request_id": "01HXYZ-resp-uuid-deadbeef",
+  "model": "gemini-2.5-pro",
+  "prompt_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+  "overall_severity": "WARNING",
+  "business_impact": "MEDIUM",
+  "detailed_analysis": {
+    "visual_changes": ["Hero banner moved 12px down"],
+    "functional_impact": ["No measurable click-region shift"],
+    "technical_correlation": ["css .hero { padding-top: ... } changed"]
+  },
+  "recommendations": {
+    "immediate_actions": [],
+    "review_items": ["Confirm intentional layout shift"],
+    "acceptance_criteria": "Accept if hero positioning is part of design refresh"
+  },
+  "confidence_score": 0.85
+}

@@ -1,0 +1,10 @@
+{
+  "details": "test-induced provider error",
+  "error_type": "provider_error",
+  "model": "gemini-test-model",
+  "prompt_sha256": "abc1230000000000000000000000000000000000000000000000000000000000",
+  "request_id": "<NORMALIZED>",
+  "result_type": "analysis_error",
+  "retryable": false,
+  "schema_version": "2026-04-30.1"
+}

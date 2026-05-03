@@ -1,0 +1,5 @@
+{
+  "schema": "ai_request",
+  "valid": false,
+  "note": "Top-level 'url' field missing. AIAnalysisRequest requires it; both Pydantic and ajv must reject."
+}

@@ -1,0 +1,50 @@
+{
+  "schema_version": "2026-04-30.1",
+  "request_id": "01HXYZ-test-uuid-deadbeef",
+  "url": "https://example.com/about",
+  "structured_data": {
+    "change_summary": {
+      "overall_assessment": {
+        "changes_detected": true,
+        "change_severity": "high",
+        "user_impact": "high",
+        "requires_review": true
+      },
+      "change_categories": {
+        "visual": {"screenshot_similarity": 0.87, "visual_changes": true, "layout_shifts": false},
+        "content": {"title_changed": false, "text_content_changed": false, "structure_changed": false},
+        "technical": {"html_changes": true, "css_changes": true, "js_changes": false, "asset_changes": false}
+      },
+      "affected_components": ["visual_layout", "content", "structure", "styling"],
+      "recommendation": "Review visual changes in layout; Verify styling consistency",
+      "ai_analysis_priority": "high"
+    },
+    "html_changes": {
+      "changes_detected": true,
+      "change_types": ["content"],
+      "changes": [
+        {"type": "content", "element": "title", "change": "text_modified", "description": "Page title changed", "old_value": "Welcome | Acme", "new_value": "About Us | Acme", "impact": "medium"}
+      ],
+      "summary": {"total_changes": 1, "structural_changes": 0, "content_changes": 1, "meta_changes": 0, "navigation_changes": 0, "high_impact_changes": 0, "medium_impact_changes": 1, "severity": "medium"}
+    },
+    "css_changes": {
+      "changes_detected": false,
+      "change_types": [],
+      "files_changed": [],
+      "changes": [],
+      "summary": {"total_changes": 0, "layout_affecting": 0, "visual_only": 0, "severity": "none"}
+    },
+    "js_changes": {
+      "changes_detected": false,
+      "change_types": [],
+      "files_changed": [],
+      "changes": [],
+      "summary": {"total_changes": 0, "functionality_impact": "none", "severity": "none"}
+    }
+  },
+  "screenshots": {
+    "baseline": null,
+    "current": null,
+    "visual_diff": null
+  }
+}
