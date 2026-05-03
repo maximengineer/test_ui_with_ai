@@ -1,0 +1,333 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI-Powered UI Regression Analysis Report - {{ timestamp }}</title>
+    <style>
+        * { box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            margin: 0; padding: 20px; background: #fafafa; line-height: 1.6;
+        }
+        .container { max-width: 1400px; margin: 0 auto; }
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white; padding: 30px; border-radius: 12px; margin-bottom: 30px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+        }
+        .header h1 { margin: 0 0 10px 0; font-size: 2.5em; font-weight: 300; }
+        .header .subtitle { opacity: 0.9; font-size: 1.1em; margin: 5px 0; }
+        .header .meta { opacity: 0.8; font-size: 0.9em; margin-top: 15px; }
+        .executive-summary {
+            background: white; padding: 25px; border-radius: 12px; margin-bottom: 25px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.05); border-left: 4px solid #667eea;
+        }
+        .executive-summary h2 { margin-top: 0; color: #333; }
+        .summary-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin: 20px 0; }
+        .stat-card { background: white; padding: 20px; border-radius: 10px; text-align: center; box-shadow: 0 2px 8px rgba(0,0,0,0.08); transition: transform 0.2s; }
+        .stat-card:hover { transform: translateY(-2px); }
+        .stat-number { font-size: 2.2em; font-weight: bold; margin: 10px 0; }
+        .stat-label { color: #666; font-size: 0.9em; text-transform: uppercase; letter-spacing: 1px; }
+        .critical .stat-number { color: #dc3545; }
+        .warning .stat-number { color: #fd7e14; }
+        .safe .stat-number { color: #28a745; }
+        .error .stat-number { color: #6f42c1; }
+        .confidence-meter { background: white; padding: 20px; border-radius: 10px; margin: 20px 0; box-shadow: 0 2px 8px rgba(0,0,0,0.08); }
+        .confidence-bar { height: 8px; background: #e9ecef; border-radius: 4px; margin: 10px 0; position: relative; }
+        .confidence-fill { height: 100%; border-radius: 4px; transition: width 0.3s; background: linear-gradient(90deg, #28a745, #20c997, #17a2b8); }
+        .patterns-section, .recommendations-section { background: white; padding: 25px; border-radius: 12px; margin-bottom: 25px; box-shadow: 0 2px 10px rgba(0,0,0,0.05); }
+        .section-title { color: #333; margin-bottom: 20px; font-size: 1.4em; font-weight: 600; border-bottom: 2px solid #e9ecef; padding-bottom: 8px; }
+        .url-card { background: white; border: 1px solid #e0e0e0; border-radius: 10px; margin-bottom: 20px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.05); }
+        .url-header { padding: 20px; background: #f8f9fa; border-bottom: 1px solid #e0e0e0; display: flex; justify-content: space-between; align-items: center; }
+        .url-title { margin: 0; color: #333; font-size: 1.2em; }
+        .severity-badge { padding: 6px 12px; border-radius: 20px; font-size: 0.8em; font-weight: bold; text-transform: uppercase; letter-spacing: 0.5px; }
+        .severity-critical { background: #f8d7da; color: #721c24; }
+        .severity-warning { background: #fff3cd; color: #856404; }
+        .severity-safe { background: #d4edda; color: #155724; }
+        .severity-error { background: #f5c2c7; color: #58151c; }
+        .severity-no-changes { background: #e2e3e5; color: #383d41; }
+        .severity-ai-disabled { background: #d1ecf1; color: #0c5460; }
+        .url-content { padding: 20px; }
+        .ai-analysis { background: linear-gradient(135deg, #f8f9ff 0%, #fff 100%); padding: 20px; border-radius: 8px; margin-bottom: 20px; border-left: 4px solid #667eea; }
+        .ai-analysis h4 { color: #667eea; margin-top: 0; display: flex; align-items: center; }
+        .ai-analysis h4::before { content: "🤖"; margin-right: 8px; }
+        .ai-error-panel { background: #fff5f5; padding: 20px; border-radius: 8px; margin-bottom: 20px; border-left: 4px solid #dc3545; }
+        .ai-error-panel h4 { color: #dc3545; margin-top: 0; }
+        .ai-error-panel code { background: #2d3748; color: #e2e8f0; padding: 2px 6px; border-radius: 4px; font-size: 0.9em; }
+        .ai-disabled-panel { background: #f0f9ff; padding: 20px; border-radius: 8px; margin-bottom: 20px; border-left: 4px solid #0ea5e9; }
+        .ai-disabled-panel h4 { color: #0369a1; margin-top: 0; }
+        .no-changes-panel { background: #f8f9fa; padding: 20px; border-radius: 8px; margin-bottom: 20px; border-left: 4px solid #6c757d; }
+        .no-changes-panel h4 { color: #495057; margin-top: 0; }
+        .analysis-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 20px; margin: 15px 0; }
+        .analysis-item { background: white; padding: 15px; border-radius: 6px; }
+        .analysis-item h5 { margin-top: 0; color: #555; font-size: 0.9em; text-transform: uppercase; letter-spacing: 0.5px; }
+        .analysis-item ul { margin: 5px 0; padding-left: 15px; }
+        .analysis-item li { margin-bottom: 5px; color: #666; font-size: 0.9em; }
+        .recommendations { background: #fff8e1; padding: 15px; border-radius: 8px; margin-top: 15px; border-left: 4px solid #ffc107; }
+        .recommendations h5 { color: #e65100; margin-top: 0; }
+        .screenshots-section { margin-top: 25px; }
+        .screenshots-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px; }
+        .screenshot-card { background: white; padding: 15px; border-radius: 8px; text-align: center; }
+        .screenshot-card img { max-width: 100%; height: auto; border-radius: 6px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); margin-top: 10px; }
+        .screenshot-label { font-weight: 600; color: #555; margin-bottom: 5px; }
+        .technical-details { background: #f8f9fa; padding: 15px; border-radius: 8px; margin-top: 20px; }
+        .technical-details summary { cursor: pointer; font-weight: 600; color: #666; padding: 5px 0; }
+        .technical-details[open] summary { margin-bottom: 10px; }
+        .pattern-item { background: white; padding: 15px; border-radius: 8px; margin: 10px 0; border-left: 3px solid #17a2b8; }
+        .recommendation-category { margin: 15px 0; }
+        .recommendation-category h4 { color: #495057; margin-bottom: 8px; }
+        .recommendation-list { list-style: none; padding: 0; }
+        .recommendation-list li { padding: 8px 12px; margin: 5px 0; background: #f8f9fa; border-radius: 6px; border-left: 3px solid #28a745; }
+        .recommendation-list li::before { content: "→"; color: #28a745; margin-right: 8px; font-weight: bold; }
+        @media (max-width: 768px) {
+            .analysis-grid, .screenshots-grid { grid-template-columns: 1fr; }
+            .summary-grid { grid-template-columns: repeat(2, 1fr); }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🤖 AI-Powered UI Regression Analysis</h1>
+            <div class="subtitle">Comprehensive Cross-URL Pattern Detection & Analysis</div>
+            <div class="meta">
+                Generated: {{ timestamp }} |
+                URLs Analyzed: {{ aggregation.summary.total_urls_analyzed }} |
+                Success Rate: {{ (aggregation.confidence_metrics.success_rate * 100)|round(1) }}%
+            </div>
+        </div>
+
+        <div class="executive-summary">
+            <h2>📊 Executive Summary</h2>
+            <div class="summary-grid">
+                <div class="stat-card critical">
+                    <div class="stat-number">{{ aggregation.summary.critical_issues }}</div>
+                    <div class="stat-label">Critical Issues</div>
+                </div>
+                <div class="stat-card warning">
+                    <div class="stat-number">{{ aggregation.summary.warnings }}</div>
+                    <div class="stat-label">Warnings</div>
+                </div>
+                <div class="stat-card safe">
+                    <div class="stat-number">{{ aggregation.summary.safe_changes }}</div>
+                    <div class="stat-label">Safe Changes</div>
+                </div>
+                <div class="stat-card error">
+                    <div class="stat-number">{{ aggregation.summary.errors }}</div>
+                    <div class="stat-label">Processing Errors</div>
+                </div>
+            </div>
+
+            <div class="confidence-meter">
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <strong>AI Analysis Confidence</strong>
+                    <span>{{ (aggregation.confidence_metrics.ai_confidence.average * 100)|round(1) }}%</span>
+                </div>
+                <div class="confidence-bar">
+                    <div class="confidence-fill" style="width: {{ (aggregation.confidence_metrics.ai_confidence.average * 100)|round(1) }}%"></div>
+                </div>
+                <small>Range: {{ (aggregation.confidence_metrics.ai_confidence.min * 100)|round(1) }}% - {{ (aggregation.confidence_metrics.ai_confidence.max * 100)|round(1) }}%</small>
+            </div>
+        </div>
+
+        {% if aggregation.patterns %}
+        <div class="patterns-section">
+            <h2 class="section-title">🔍 Cross-URL Patterns Detected</h2>
+
+            {% if aggregation.patterns.common_html_changes.total_changes > 0 %}
+            <div class="pattern-item">
+                <h4>HTML Changes Analysis</h4>
+                <p>Total changes across all URLs: <strong>{{ aggregation.patterns.common_html_changes.total_changes }}</strong></p>
+                {% if aggregation.patterns.common_html_changes.change_types %}
+                <p>Most common change types:</p>
+                <ul>
+                    {% for change_type, count in aggregation.patterns.common_html_changes.change_types.items() %}
+                    <li><strong>{{ change_type }}</strong>: {{ count }} occurrences</li>
+                    {% endfor %}
+                </ul>
+                {% endif %}
+            </div>
+            {% endif %}
+
+            {% if aggregation.patterns.business_impact_distribution %}
+            <div class="pattern-item">
+                <h4>Business Impact Distribution</h4>
+                {% for impact, count in aggregation.patterns.business_impact_distribution.items() %}
+                <div style="margin: 5px 0;"><strong>{{ impact }}</strong>: {{ count }} URL(s)</div>
+                {% endfor %}
+            </div>
+            {% endif %}
+
+            {% if aggregation.patterns.recurring_issues %}
+            <div class="pattern-item">
+                <h4>Recurring Issues</h4>
+                {% for issue in aggregation.patterns.recurring_issues %}
+                <div style="margin: 8px 0;">
+                    <strong>"{{ issue.keyword }}"</strong> mentioned {{ issue.frequency }} times across {{ issue.urls_affected }} URL(s)
+                </div>
+                {% endfor %}
+            </div>
+            {% endif %}
+        </div>
+        {% endif %}
+
+        {% if aggregation.recommendations %}
+        <div class="recommendations-section">
+            <h2 class="section-title">💡 Global Recommendations</h2>
+            {% for category, label, emoji in [
+                ("immediate_actions", "Immediate Actions", "🚨"),
+                ("strategic_actions", "Strategic Actions", "📋"),
+                ("process_improvements", "Process Improvements", "⚙️"),
+                ("monitoring_suggestions", "Monitoring Suggestions", "📊"),
+            ] %}
+            {% if aggregation.recommendations[category] %}
+            <div class="recommendation-category">
+                <h4>{{ emoji }} {{ label }}</h4>
+                <ul class="recommendation-list">
+                    {% for action in aggregation.recommendations[category] %}
+                    <li>{{ action }}</li>
+                    {% endfor %}
+                </ul>
+            </div>
+            {% endif %}
+            {% endfor %}
+        </div>
+        {% endif %}
+
+        <h2 class="section-title">🌐 Individual URL Analysis</h2>
+        {% for url_result in url_results %}
+        {% set ai = url_result.ai_analysis %}
+        {% set rt = ai.result_type %}
+        <div class="url-card">
+            <div class="url-header">
+                <h3 class="url-title">{{ url_result.url }}</h3>
+                {% if rt == "analysis_success" %}
+                  <span class="severity-badge severity-{{ ai.overall_severity|lower }}">{{ ai.overall_severity }}</span>
+                {% elif rt == "analysis_error" %}
+                  <span class="severity-badge severity-error">AI Failed</span>
+                {% elif rt == "no_changes" %}
+                  <span class="severity-badge severity-no-changes">No Changes</span>
+                {% elif rt == "ai_disabled" %}
+                  <span class="severity-badge severity-ai-disabled">AI Disabled</span>
+                {% else %}
+                  <span class="severity-badge severity-{{ (ai.overall_severity or 'error')|lower }}">{{ ai.overall_severity or "UNKNOWN" }}</span>
+                {% endif %}
+            </div>
+            <div class="url-content">
+                {% if rt == "analysis_error" %}
+                <div class="ai-error-panel">
+                    <h4>⚠️ AI Analysis Failed</h4>
+                    <p><strong>Error type:</strong> {{ ai.error_type }} {% if ai.retryable %}(retryable){% else %}(not retryable){% endif %}</p>
+                    {% if ai.model %}<p><strong>Model:</strong> {{ ai.model }}</p>{% endif %}
+                    <p><strong>Details:</strong> {{ ai.details }}</p>
+                    {% if ai.retryable %}
+                    <p style="margin-top: 12px;">Retry this URL with: <code>afr enhanced-report --date {{ report_date }} --only {{ url_result.url }}</code></p>
+                    {% endif %}
+                </div>
+
+                {% elif rt == "ai_disabled" %}
+                <div class="ai-disabled-panel">
+                    <h4>🔒 AI Analysis Disabled</h4>
+                    <p>AI was deliberately not invoked for this URL (AFR_AI_ENABLED=false at the time of the run).
+                    Comparator data is still on disk under <code>{{ url_result.report_path.name }}/</code>.</p>
+                    {% if ai.checked_at %}<p><small>Checked at: {{ ai.checked_at }}</small></p>{% endif %}
+                </div>
+
+                {% elif rt == "no_changes" %}
+                <div class="no-changes-panel">
+                    <h4>✅ No Changes Detected</h4>
+                    <p>The comparator found no differences between baseline and current for this URL, so AI analysis was skipped.</p>
+                    {% if ai.checked_at %}<p><small>Checked at: {{ ai.checked_at }}</small></p>{% endif %}
+                </div>
+
+                {% else %}
+                <div class="ai-analysis">
+                    <h4>AI Analysis Results</h4>
+                    {% if ai.detailed_analysis %}
+                    <div class="analysis-grid">
+                        {% for field, label in [
+                            ("visual_changes", "Visual Changes"),
+                            ("functional_impact", "Functional Impact"),
+                            ("technical_correlation", "Technical Correlation"),
+                        ] %}
+                        {% if ai.detailed_analysis[field] %}
+                        <div class="analysis-item">
+                            <h5>{{ label }}</h5>
+                            <ul>
+                                {% for item in ai.detailed_analysis[field] %}<li>{{ item }}</li>{% endfor %}
+                            </ul>
+                        </div>
+                        {% endif %}
+                        {% endfor %}
+                    </div>
+                    {% endif %}
+
+                    {% if ai.recommendations %}
+                    <div class="recommendations">
+                        <h5>🎯 AI Recommendations</h5>
+                        {% if ai.recommendations.immediate_actions %}
+                        <strong>Immediate:</strong> {{ ai.recommendations.immediate_actions|join(', ') }}<br>
+                        {% endif %}
+                        {% if ai.recommendations.acceptance_criteria %}
+                        <strong>Acceptance:</strong> {{ ai.recommendations.acceptance_criteria }}
+                        {% endif %}
+                    </div>
+                    {% endif %}
+
+                    <div style="margin-top: 15px;">
+                        <strong>Business Impact:</strong> {{ ai.business_impact }} |
+                        <strong>Confidence:</strong> {{ (ai.confidence_score * 100)|round(1) }}%
+                        {% if ai.reasoning %}| <strong>Reasoning:</strong> {{ ai.reasoning }}{% endif %}
+                    </div>
+                </div>
+
+                {% if url_result.screenshots_available %}
+                <div class="screenshots-section">
+                    <h4>Visual Comparison</h4>
+                    <div class="screenshots-grid">
+                        {% for screenshot_type in url_result.screenshots_available %}
+                        <div class="screenshot-card">
+                            <div class="screenshot-label">{{ screenshot_type|title }}</div>
+                            <img src="{{ url_result.report_path.name }}/screenshots/{{ screenshot_type }}.png"
+                                 alt="{{ screenshot_type }} screenshot" loading="lazy">
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+                {% endif %}
+                {% endif %}
+
+                <details class="technical-details">
+                    <summary>🔧 Technical Details</summary>
+                    {% if url_result.structured_data and url_result.structured_data.metadata %}
+                    <div style="margin-top: 10px;">
+                        <strong>Analysis Metadata:</strong><br>
+                        Files processed: {{ url_result.structured_data.metadata.files_loaded }}<br>
+                        Data directory: {{ url_result.structured_data.metadata.diffs_directory }}<br>
+                        Timestamp: {{ url_result.structured_data.metadata.timestamp }}
+                    </div>
+                    {% endif %}
+                    {% if ai.analysis_metadata %}
+                    <div style="margin-top: 10px;">
+                        <strong>AI Analysis Metadata:</strong><br>
+                        Request type: {{ ai.analysis_metadata.request_type }}<br>
+                        Data sources: {{ ai.analysis_metadata.data_sources|join(', ') }}<br>
+                        {% if ai.analysis_metadata.total_changes_analyzed %}
+                        Changes analyzed: {{ ai.analysis_metadata.total_changes_analyzed }}
+                        {% endif %}
+                    </div>
+                    {% endif %}
+                </details>
+            </div>
+        </div>
+        {% endfor %}
+
+        <div style="text-align: center; margin-top: 40px; padding: 20px; color: #666; font-size: 0.9em;">
+            Report generated by AI-Powered UI Regression Analysis System<br>
+            <small>Analysis confidence represents AI model certainty in assessment accuracy</small>
+        </div>
+    </div>
+</body>
+</html>

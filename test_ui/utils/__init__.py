@@ -1,7 +1,9 @@
-"""Utility modules for the test_ui package."""
+"""Deprecated shim — moved to test_ui.common.images in Phase A.3.
 
-from .image_compression import compress_base64_screenshot
+Kept as a re-export so any external code importing from `test_ui.utils`
+doesn't silently break. Remove on the next major version bump.
+"""
 
-__all__ = [
-    'compress_base64_screenshot'
-]
+from ..common.images import compress_base64_screenshot
+
+__all__ = ["compress_base64_screenshot"]
