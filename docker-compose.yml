@@ -13,8 +13,12 @@ services:
       # Mount source code for development (no rebuild needed for code changes)
       - ./test_ui:/app/test_ui
     environment:
-      # The URL for the AI analyzer service, accessible via the internal Docker network
-      - AI_ANALYZER_SERVICE_URL=http://ai-analyzer:3000
+      # The URL for the AI analyzer service, accessible via the internal Docker network.
+      - AFR_AI_ANALYZER_SERVICE_URL=http://ai-analyzer:3000
+      # WORKDIR is /app and the host's ./data is mounted at /data. Without this,
+      # comparator/report would write to /app/data/... (ephemeral writable layer)
+      # instead of the mounted /data, and outputs would be lost on container exit.
+      - AFR_DATA_ROOT=/data
     depends_on:
       ai-analyzer:
         condition: service_healthy
@@ -27,6 +31,20 @@ services:
     build: ./ai_analyzer
     env_file:
       - .env
+    environment:
+      # Path resolution inside the container. Server.js reads these env vars
+      # with defaults relative to __dirname; setting them explicitly here keeps
+      # Docker behavior unambiguous and decoupled from any local-dev fallback.
+      - SCHEMAS_DIR=/app/schemas
+      - PROMPTS_DIR=/app/prompts
+    volumes:
+      # Generated JSON Schemas (Pydantic source-of-truth → ajv consumer).
+      # Read-only: the Python side writes them; Node only validates against them.
+      - ./schemas:/app/schemas:ro
+      # System prompts loaded by server.js at startup (Phase A.1.5).
+      # Read-only: prompts are content, edited in git, mounted live so changes
+      # don't require an image rebuild.
+      - ./ai_analyzer/prompts:/app/prompts:ro
     ports:
       - "3000:3000"
     networks:

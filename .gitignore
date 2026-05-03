@@ -1,5 +1,22 @@
+# Python
 __pycache__/
-.env
+*.pyc
+.pytest_cache/
 .ruff_cache/
 .venv/
-.github/
+.coverage
+htmlcov/
+*.egg-info/
+
+# Node (ai_analyzer/) — package-lock.json IS tracked for deterministic installs
+node_modules/
+
+# Secrets and local config
+.env
+
+# Project artifacts: crawl outputs, run logs, dashboard SQLite db
+# (data/baseline, data/current, data/comparator, data/report, data/runs, data/dashboard.db)
+data/
+
+# OS junk
+.DS_Store

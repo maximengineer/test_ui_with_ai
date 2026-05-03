@@ -1,35 +1,60 @@
 [tool.poetry]
 name = "ai-frontend-regression-tester"
 version = "1.0.0"
-description = "Production-ready front-end regression tester"
+description = "AI-assisted UI regression analysis tool. See REFACTOR_AND_DASHBOARD_PLAN.md for current status."
 authors = ["Your Team <you@example.com>"]
 
 [tool.poetry.dependencies]
 python = "^3.13"
-aiofiles = "^24.1.0"
-aiohttp = "^3.10.12"
-beautifulsoup4 = "^4.12.3"
-click = "^8.2.1"
-crawl4ai = "^0.7.4"
+aiofiles = "^25.1.0"
+aiohttp = "^3.13.5"
+beautifulsoup4 = "^4.14.3"
+click = "^8.3.3"
+crawl4ai = "^0.8.6"
+httpx = "^0.28.1"
+# jinja2 is imported directly by report/generator.py for HTML templating.
+# It was previously a transitive dep; declaring it explicitly avoids
+# silent breakage if upstream packages drop it.
+jinja2 = "^3.1.6"
 loguru = "^0.7.3"
-lxml = "^5.2.2"
-opencv-python-headless = "^4.10.0.84"
-pillow = "^10.4.0"
-pydantic = "^2.11.7"
-pydantic-settings = "^2.10.1"
-pytz = "^2024.2"
-pyyaml = "^6.0.2"
-requests = "^2.32.5"
-scikit-image = "^0.25.2"
-typer = "^0.16.1"
+# Pinned to 5.x: crawl4ai 0.8.6's transitive deps (patchright, etc.) require
+# lxml < 6. Bumping to 6.x is blocked until upstream relaxes that constraint.
+lxml = "^5.4.0"
+# Pinned exactly: golden tests in Phase A.2 are sensitive to visual-diff lib version.
+# Refresh these pins if you regenerate goldens (`pytest --update-golden`).
+opencv-python-headless = "==4.13.0.92"
+pillow = "^12.2.0"
+# playwright is imported directly by crawler/engine.py. It was previously
+# pulled in transitively via crawl4ai; declaring explicitly is safer.
+playwright = "^1.59.0"
+pydantic = "^2.13.3"
+pydantic-settings = "^2.14.0"
+pytz = "^2026.1"
+pyyaml = "^6.0.3"
+# rich is imported directly by cli.py for console output. Transitive via click
+# today, but click could drop it on a major version bump.
+rich = "^15.0.0"
+scikit-image = "==0.26.0"
+python-ulid = "^3.1.0"
+ruamel-yaml = "^0.19.1"
 
 [tool.poetry.group.dev.dependencies]
-pytest = "^8.4.1"
-pytest-asyncio = "^1.1.0"
-ruff = "^0.12.9"
+pytest = "^9.0.3"
+pytest-asyncio = "^1.3.0"
+pytest-cov = "^7.1.0"
+respx = "^0.23.1"
+ruff = "^0.15.12"
 
 [tool.poetry.scripts]
-afr = "test_ui.cli:app"
+afr = "test_ui.cli:cli"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+markers = [
+    "slow: tests that take >5s; skipped by default. Run with `pytest -m slow`.",
+]
+addopts = "-q -m 'not slow'"
 
 [build-system]
 requires = ["poetry-core"]

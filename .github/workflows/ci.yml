@@ -1,0 +1,146 @@
+# Phase A.4 CI workflow.
+#
+# Replaces the broken pre-A.1 regression-test.yml (deleted; wrong service
+# name, wrong CLI args, wrong output path, never ran). Six independent jobs
+# run in parallel — each one is its own fast signal so a failure tells you
+# exactly what broke.
+#
+# Concurrency policy: cancel-in-progress on the same ref so superseded
+# pushes don't pile up runners. Branch protection should require all six
+# jobs to pass before merge.
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']  # release tags get the same validation
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+# Pinned runner image so a GitHub-Hosted-Runners image bump can't silently
+# change behavior. ubuntu-24.04 = Noble Numbat LTS.
+env:
+  PYTHON_VERSION: '3.13'
+  # Latest LTS at time of A.4. Bumped from the plan's "Node 20" — matches
+  # ai_analyzer/Dockerfile + package.json's "engines": { "node": ">=24.0.0" }.
+  NODE_VERSION: '24'
+  POETRY_VERSION: '1.8.3'
+
+jobs:
+  # -------------------------------------------------------------------------
+  # 1. lint — ruff check + format-check. Fast (<5s); fails first.
+  # -------------------------------------------------------------------------
+  lint:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - run: pip install ruff
+      - name: ruff check
+        run: ruff check test_ui/ scripts/ tests/
+      - name: ruff format --check
+        run: ruff format --check test_ui/ scripts/ tests/
+
+  # -------------------------------------------------------------------------
+  # 2. audit — hardcoded data-paths check (Phase A.0.3 deliverable).
+  # -------------------------------------------------------------------------
+  audit:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - run: python scripts/audit_paths.py
+
+  # -------------------------------------------------------------------------
+  # 3. test-fast — pytest default (slow tests excluded). Target <30s.
+  # -------------------------------------------------------------------------
+  test-fast:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      # Node is needed for the cross-language contract smoke (subprocess-calls
+      # validate.js). Without it, those tests pytest.skip() instead of running.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - name: Install Poetry
+        run: pip install "poetry==${{ env.POETRY_VERSION }}"
+      - name: Install Python deps
+        run: poetry config virtualenvs.create false && poetry install --only main,dev --no-interaction --no-ansi
+      - name: Install Node deps for ai_analyzer
+        # validate.js needs ajv + ajv-formats from ai_analyzer/node_modules.
+        # `npm ci` is reproducible from package-lock.json (faster than install).
+        run: cd ai_analyzer && npm ci
+      - name: Run fast tests
+        run: pytest -q
+
+  # -------------------------------------------------------------------------
+  # 4. test-slow — slow-marked suite (OpenCV SSIM, BeautifulSoup DOM diff,
+  # comparator goldens). Target <90s; OpenCV operations dominate.
+  # -------------------------------------------------------------------------
+  test-slow:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - name: Install OpenCV system libs
+        # opencv-python-headless still needs libgl1 + libglib2.0-0 at runtime.
+        run: sudo apt-get update && sudo apt-get install -y libgl1 libglib2.0-0
+      - name: Install Poetry
+        run: pip install "poetry==${{ env.POETRY_VERSION }}"
+      - name: Install Python deps
+        run: poetry config virtualenvs.create false && poetry install --only main,dev --no-interaction --no-ansi
+      - name: Run slow tests
+        run: pytest -q -m slow
+
+  # -------------------------------------------------------------------------
+  # 5. schema-drift — Pydantic source ↔ schemas/*.schema.json on disk.
+  # If a model changed but `python scripts/export_schemas.py` wasn't rerun,
+  # this job fails with a diff so the fix is obvious.
+  # -------------------------------------------------------------------------
+  schema-drift:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - name: Install Poetry
+        run: pip install "poetry==${{ env.POETRY_VERSION }}"
+      - name: Install Python deps
+        run: poetry config virtualenvs.create false && poetry install --only main --no-interaction --no-ansi
+      - name: Re-export schemas
+        run: python scripts/export_schemas.py
+      - name: Assert no diff
+        # If schemas/ changed, the next line shows the diff and exits non-zero.
+        # Run `python scripts/export_schemas.py` locally and commit to fix.
+        run: git diff --exit-code schemas/
+
+  # -------------------------------------------------------------------------
+  # 6. node-validate — ai_analyzer syntax check via `npm test`. The full
+  # Vitest contract suite is a future deliverable; for now this catches any
+  # JS file that won't even parse (regression-prevention floor).
+  # -------------------------------------------------------------------------
+  node-validate:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - run: cd ai_analyzer && npm ci
+      - run: cd ai_analyzer && npm test
