@@ -1,0 +1,137 @@
+{
+  "$defs": {
+    "DetailedAnalysis": {
+      "additionalProperties": false,
+      "properties": {
+        "functional_impact": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Functional Impact",
+          "type": "array"
+        },
+        "technical_correlation": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Technical Correlation",
+          "type": "array"
+        },
+        "visual_changes": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Visual Changes",
+          "type": "array"
+        }
+      },
+      "required": [
+        "visual_changes",
+        "functional_impact",
+        "technical_correlation"
+      ],
+      "title": "DetailedAnalysis",
+      "type": "object"
+    },
+    "Recommendations": {
+      "additionalProperties": false,
+      "properties": {
+        "acceptance_criteria": {
+          "title": "Acceptance Criteria",
+          "type": "string"
+        },
+        "immediate_actions": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Immediate Actions",
+          "type": "array"
+        },
+        "review_items": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Review Items",
+          "type": "array"
+        }
+      },
+      "required": [
+        "immediate_actions",
+        "review_items",
+        "acceptance_criteria"
+      ],
+      "title": "Recommendations",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Successful AI analysis. The model produced a verdict.",
+  "properties": {
+    "business_impact": {
+      "enum": [
+        "HIGH",
+        "MEDIUM",
+        "LOW",
+        "NONE"
+      ],
+      "title": "Business Impact",
+      "type": "string"
+    },
+    "confidence_score": {
+      "maximum": 1.0,
+      "minimum": 0.0,
+      "title": "Confidence Score",
+      "type": "number"
+    },
+    "detailed_analysis": {
+      "$ref": "#/$defs/DetailedAnalysis"
+    },
+    "model": {
+      "title": "Model",
+      "type": "string"
+    },
+    "overall_severity": {
+      "enum": [
+        "CRITICAL",
+        "WARNING",
+        "SAFE"
+      ],
+      "title": "Overall Severity",
+      "type": "string"
+    },
+    "prompt_sha256": {
+      "title": "Prompt Sha256",
+      "type": "string"
+    },
+    "recommendations": {
+      "$ref": "#/$defs/Recommendations"
+    },
+    "request_id": {
+      "title": "Request Id",
+      "type": "string"
+    },
+    "result_type": {
+      "const": "analysis_success",
+      "default": "analysis_success",
+      "title": "Result Type",
+      "type": "string"
+    },
+    "schema_version": {
+      "default": "2026-04-30.1",
+      "title": "Schema Version",
+      "type": "string"
+    }
+  },
+  "required": [
+    "request_id",
+    "model",
+    "prompt_sha256",
+    "overall_severity",
+    "business_impact",
+    "detailed_analysis",
+    "recommendations",
+    "confidence_score"
+  ],
+  "title": "AIAnalysisResponse",
+  "type": "object"
+}

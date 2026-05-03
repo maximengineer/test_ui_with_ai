@@ -1,13 +1,19 @@
 {
   "name": "ai-analyzer-service",
   "version": "1.0.0",
-  "description": "A Node.js service to proxy requests to the Gemini API for visual regression analysis.",
+  "description": "Node.js service that proxies UI regression analysis requests to Google Gemini. Validates incoming requests against the JSON Schema generated from Pydantic contracts in test_ui/contracts/.",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "test": "node --check server.js && node --check scripts/validate.js && echo 'syntax OK (Vitest contract tests deferred — see plan A.4)'"
+  },
+  "engines": {
+    "node": ">=24.0.0"
   },
   "dependencies": {
-    "@google/generative-ai": "^0.1.1",
-    "express": "^4.18.2"
+    "@google/genai": "^1.51.0",
+    "ajv": "^8.20.0",
+    "ajv-formats": "^3.0.1",
+    "express": "^5.2.1"
   }
 }

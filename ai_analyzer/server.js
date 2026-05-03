@@ -1,242 +1,431 @@
+// AI analyzer service — Phase A.1.4 rewrite.
+//
+// Major changes vs. the prior version:
+// - Replaces @google/generative-ai (legacy SDK) with @google/genai (current SDK).
+// - Bumps express 4 → 5 (auto-catches async route rejections).
+// - Adds ajv + ajv-formats for strict request validation against the JSON
+//   Schemas generated from Pydantic models in test_ui/contracts/.
+// - Sends FULL structured data to Gemini (HTML/CSS/JS changes), not just counts.
+//   Bounded by per-category and per-snippet caps; magic-byte image validation.
+// - Returns typed AIAnalysisError on every failure path. No more synthetic
+//   {overall_severity:"ERROR", confidence_score:1.0} success-shaped responses.
+//
+// What's intentionally still inline (will move in A.1.5):
+// - The system prompt body. A.1.5 reads it from PROMPTS_DIR/system.txt.
+//   The hash mechanism stays the same; A.1.5 just swaps the source.
+
 const express = require('express');
-const { GoogleGenerativeAI } = require('@google/generative-ai');
+const path = require('path');
+const fs = require('fs');
+const crypto = require('crypto');
+const Ajv = require('ajv').default;
+const addFormats = require('ajv-formats').default;
+const { GoogleGenAI } = require('@google/genai');
+
+// =============================================================================
+// Constants
+// =============================================================================
+
+// Path resolution (Phase A.1.3).
+const SCHEMAS_DIR = process.env.SCHEMAS_DIR || path.resolve(__dirname, '../schemas');
+const PROMPTS_DIR = process.env.PROMPTS_DIR || path.resolve(__dirname, 'prompts');
+
+// Model selection. Default matches .env.example.
+const DEFAULT_MODEL = process.env.GEMINI_MODEL || 'gemini-2.5-pro';
+
+// Bounded payload defaults. These are conservative caps so we never blow up
+// even on a pathological page; tighten later if real-data measurement (Phase
+// A.1.1 follow-up) shows we need to.
+//
+// Body cap math: 3 images × 10 MB decoded ≈ 14 MB base64 each = ~42 MB worst-
+// case body. 50 MB cap leaves headroom for the structured data + prompt + JSON
+// envelope. Express enforces the body cap; the per-image cap fires inside our
+// handler. The two MUST stay in agreement or one cap is dead code.
+const MAX_IMAGE_DECODED_BYTES = 10 * 1024 * 1024;
+const MAX_BODY_BYTES = 50 * 1024 * 1024;
+const MAX_CHANGES_PER_CATEGORY = 200;
+const MAX_SNIPPET_CHARS = 2000;
+
+const PORT = 3000;
+
+// =============================================================================
+// Schema loading + ajv compile (once, at startup)
+// =============================================================================
+
+const ajv = new Ajv({ strict: true, allErrors: true });
+addFormats(ajv);
+
+let validateRequest;
+let validateResponseShape;
+let SCHEMA_VERSION;
+let SCHEMAS_SHA256;
+
+function loadSchemas() {
+  const requestSchemaPath = path.join(SCHEMAS_DIR, 'ai_request.schema.json');
+  const responseSchemaPath = path.join(SCHEMAS_DIR, 'ai_response.schema.json');
+
+  const requestSchema = JSON.parse(fs.readFileSync(requestSchemaPath, 'utf-8'));
+  const responseSchema = JSON.parse(fs.readFileSync(responseSchemaPath, 'utf-8'));
+
+  validateRequest = ajv.compile(requestSchema);
+  validateResponseShape = ajv.compile(responseSchema);
+
+  // Pull the canonical schema_version from the request schema's default.
+  // Server-side hardcoding would drift; reading from the file keeps it in
+  // sync with whatever the Pydantic source emitted.
+  SCHEMA_VERSION = requestSchema.properties?.schema_version?.default;
+  if (!SCHEMA_VERSION) {
+    throw new Error('Schema version not found in ai_request.schema.json defaults');
+  }
+
+  // Hash the schemas we actually loaded so /health can prove what's running.
+  // Sort filenames for deterministic hashing across environments.
+  const schemaFiles = fs.readdirSync(SCHEMAS_DIR).filter(f => f.endsWith('.schema.json')).sort();
+  const concatenated = schemaFiles.map(f => fs.readFileSync(path.join(SCHEMAS_DIR, f))).join('');
+  SCHEMAS_SHA256 = crypto.createHash('sha256').update(concatenated).digest('hex');
+
+  console.log(`Loaded ${schemaFiles.length} schemas from ${SCHEMAS_DIR} (schema_version=${SCHEMA_VERSION})`);
+}
+
+// =============================================================================
+// System prompt + hash (Phase A.1.5 — load from file, fail loud if missing)
+// =============================================================================
+
+let SYSTEM_PROMPT;
+let PROMPT_SHA256;
+
+function loadSystemPrompt() {
+  const promptPath = path.join(PROMPTS_DIR, 'system.txt');
+  // Fail loud, no fallback. Better to crash at startup than to silently serve
+  // analyses with a wrong/missing prompt and then wonder why output drifted.
+  if (!fs.existsSync(promptPath)) {
+    throw new Error(
+      `System prompt not found at ${promptPath}. ` +
+      `Set PROMPTS_DIR or create the file. ` +
+      `(Phase A.1.5 deliverable; see ai_analyzer/prompts/system.txt in the repo.)`
+    );
+  }
+  SYSTEM_PROMPT = fs.readFileSync(promptPath, 'utf-8');
+  if (SYSTEM_PROMPT.trim().length === 0) {
+    throw new Error(`System prompt at ${promptPath} is empty.`);
+  }
+  PROMPT_SHA256 = crypto.createHash('sha256').update(SYSTEM_PROMPT).digest('hex');
+  console.log(`Loaded system prompt from ${promptPath} (${SYSTEM_PROMPT.length} chars, sha256=${PROMPT_SHA256.slice(0, 12)}...)`);
+}
+
+// =============================================================================
+// Helpers
+// =============================================================================
+
+// Inspect a base64 image: validate magic bytes, validate decoded size, return
+// the detected mimeType. Returns { mimeType } on success, { error } on failure.
+// Caller passes the detected mimeType to Gemini so JPEG bytes aren't sent with
+// 'image/png' (and vice versa).
+function inspectImageBase64(b64) {
+  if (!b64 || typeof b64 !== 'string') return { error: 'image is not a string' };
+  let decoded;
+  try {
+    decoded = Buffer.from(b64, 'base64');
+  } catch (e) {
+    return { error: `image base64 decode failed: ${e.message}` };
+  }
+  if (decoded.length === 0) return { error: 'image decoded to zero bytes' };
+  if (decoded.length > MAX_IMAGE_DECODED_BYTES) {
+    return { error: `image exceeds ${MAX_IMAGE_DECODED_BYTES} byte cap (${decoded.length} bytes)` };
+  }
+  // PNG: 89 50 4E 47    JPEG: FF D8 FF
+  const isPng = decoded.length >= 4
+    && decoded[0] === 0x89 && decoded[1] === 0x50
+    && decoded[2] === 0x4E && decoded[3] === 0x47;
+  const isJpeg = decoded.length >= 3
+    && decoded[0] === 0xFF && decoded[1] === 0xD8 && decoded[2] === 0xFF;
+  if (isPng) return { mimeType: 'image/png' };
+  if (isJpeg) return { mimeType: 'image/jpeg' };
+  return { error: 'image is not a valid PNG or JPEG (magic bytes mismatch)' };
+}
+
+// Truncate a code_snippet on a single change record if present.
+function truncateSnippet(change) {
+  if (change && typeof change.code_snippet === 'string' && change.code_snippet.length > MAX_SNIPPET_CHARS) {
+    return { ...change, code_snippet: change.code_snippet.slice(0, MAX_SNIPPET_CHARS) + '\n... [TRUNCATED]' };
+  }
+  return change;
+}
+
+// Apply per-category caps and prioritization. Returns a copy with bounded
+// `changes` arrays plus a `_truncation_report` summarizing what was dropped.
+function prioritizeStructuredData(sd) {
+  const report = {};
+  const result = { ...sd };
+
+  // HTML: prioritize by impact (high → medium → low), preserving relative order
+  // within each tier. structure_detail records (which carry code snippets) sort
+  // first within their tier since they're the most informative.
+  if (sd.html_changes && Array.isArray(sd.html_changes.changes)) {
+    const impactRank = { high: 0, medium: 1, low: 2, undefined: 3 };
+    const typeRank = { structure_detail: 0 };
+    const sorted = [...sd.html_changes.changes].sort((a, b) => {
+      const ai = impactRank[a.impact] ?? 3;
+      const bi = impactRank[b.impact] ?? 3;
+      if (ai !== bi) return ai - bi;
+      const at = typeRank[a.type] ?? 1;
+      const bt = typeRank[b.type] ?? 1;
+      return at - bt;
+    });
+    const original = sorted.length;
+    const truncated = sorted.slice(0, MAX_CHANGES_PER_CATEGORY).map(truncateSnippet);
+    if (original > MAX_CHANGES_PER_CATEGORY) {
+      report.html_changes = { dropped: original - MAX_CHANGES_PER_CATEGORY, kept: MAX_CHANGES_PER_CATEGORY };
+    }
+    result.html_changes = { ...sd.html_changes, changes: truncated };
+  }
+
+  // CSS / JS: file-level only at current comparator output. Just cap the array;
+  // no priority signal exists per file.
+  for (const key of ['css_changes', 'js_changes']) {
+    if (sd[key] && Array.isArray(sd[key].changes)) {
+      const original = sd[key].changes.length;
+      const truncated = sd[key].changes.slice(0, MAX_CHANGES_PER_CATEGORY);
+      if (original > MAX_CHANGES_PER_CATEGORY) {
+        report[key] = { dropped: original - MAX_CHANGES_PER_CATEGORY, kept: MAX_CHANGES_PER_CATEGORY };
+      }
+      result[key] = { ...sd[key], changes: truncated };
+    }
+  }
+
+  return { bounded: result, truncationReport: report };
+}
+
+// Build the user-side prompt sent alongside the system prompt and image parts.
+function buildUserPrompt(url, boundedStructuredData, truncationReport) {
+  const truncationNote = Object.keys(truncationReport).length > 0
+    ? `\n\nTRUNCATION APPLIED: ${JSON.stringify(truncationReport)}`
+    : '';
+  return `URL: ${url}
+
+STRUCTURED DATA (JSON):
+${JSON.stringify(boundedStructuredData, null, 2)}${truncationNote}
+
+Now analyze this and respond as instructed.`;
+}
+
+// Strip markdown fences and parse the model's text into a JSON object.
+// Throws on parse failure; caller wraps in AIAnalysisError.
+function extractAnalysisJson(rawText) {
+  if (!rawText || typeof rawText !== 'string') {
+    throw new Error('AI response was empty or non-string');
+  }
+  const cleaned = rawText.replace(/```json/gi, '').replace(/```/g, '').trim();
+  return JSON.parse(cleaned);
+}
+
+// Build a typed AIAnalysisError response. status defaults to 500; pass 400 for
+// schema/validation problems. request_id may be null when the request body
+// failed to parse (so we couldn't read it).
+function buildErrorResponse({ request_id, error_type, retryable, details, model = null, status = 500 }) {
+  return {
+    body: {
+      schema_version: SCHEMA_VERSION,
+      result_type: 'analysis_error',
+      request_id: request_id ?? null,
+      model,
+      prompt_sha256: PROMPT_SHA256,
+      error_type,
+      retryable,
+      details,
+    },
+    status,
+  };
+}
+
+// Wrap a model output payload with server-controlled metadata fields, then
+// validate the assembled response against the response schema. Throws if the
+// assembled response doesn't validate (which would mean the model returned a
+// shape we can't honor).
+function buildSuccessResponse({ request_id, model, modelOutput }) {
+  const response = {
+    schema_version: SCHEMA_VERSION,
+    result_type: 'analysis_success',
+    request_id,
+    model,
+    prompt_sha256: PROMPT_SHA256,
+    ...modelOutput,
+  };
+  if (!validateResponseShape(response)) {
+    const errs = (validateResponseShape.errors || []).map(e => `${e.instancePath} ${e.message}`).join('; ');
+    throw new Error(`assembled response does not match ai_response schema: ${errs}`);
+  }
+  return response;
+}
+
+// =============================================================================
+// Express app
+// =============================================================================
+
+loadSchemas();        // throws if schemas/ is missing or malformed
+loadSystemPrompt();   // throws if PROMPTS_DIR/system.txt is missing or empty
 
 const app = express();
-const port = 3000;
+app.use(express.json({ limit: MAX_BODY_BYTES }));
 
-// Middleware to parse JSON bodies. Increased limit for base64 images.
-app.use(express.json({ limit: '50mb' }));
-
-// Basic health check endpoint
+// /health endpoint. Phase A.1.5 may extend further; current shape is sufficient
+// for service discovery and the prompt/schema audit trail.
 app.get('/health', (req, res) => {
-  res.status(200).send('OK');
+  res.status(200).json({
+    ok: true,
+    model: DEFAULT_MODEL,
+    prompt_sha256: PROMPT_SHA256,
+    schemas_sha256: SCHEMAS_SHA256,
+    schema_version: SCHEMA_VERSION,
+  });
 });
 
-// Validation function for structured analysis requests
-function validateStructuredRequest(requestBody) {
-  const errors = [];
-  const { url, system_context, structured_data, screenshots, context_hints } = requestBody;
-  
-  if (!url || typeof url !== 'string') {
-    errors.push('Missing or invalid URL field');
-  }
-  
-  if (!system_context || typeof system_context !== 'string') {
-    errors.push('Missing or invalid system_context field');
-  }
-  
-  if (!structured_data || typeof structured_data !== 'object') {
-    errors.push('Missing or invalid structured_data field');
-  } else {
-    // Validate structured_data has expected format
-    const requiredKeys = ['html_changes', 'css_changes', 'js_changes'];
-    for (const key of requiredKeys) {
-      if (!structured_data[key]) {
-        errors.push(`Missing ${key} in structured_data`);
-      }
-    }
-  }
-  
-  if (!screenshots || typeof screenshots !== 'object') {
-    errors.push('Missing or invalid screenshots field');
-  } else {
-    if (!screenshots.baseline && !screenshots.current) {
-      errors.push('At least baseline or current screenshot must be provided');
-    }
-  }
-  
-  if (!context_hints || typeof context_hints !== 'object') {
-    errors.push('Missing or invalid context_hints field');
-  }
-  
-  return errors;
-}
-
-// Structured data analysis endpoint
+// POST /api/compare — the main analysis endpoint.
 app.post('/api/compare', async (req, res) => {
   const apiKey = process.env.GEMINI_API_KEY;
+  const requestIdFromBody = req.body && typeof req.body === 'object' ? req.body.request_id ?? null : null;
 
+  // 1. API key gate.
   if (!apiKey) {
-    console.error('GEMINI_API_KEY environment variable not set.');
-    return res.status(500).json({
-      overall_severity: 'ERROR',
-      business_impact: 'HIGH',
-      detailed_analysis: {
-        visual_changes: [],
-        functional_impact: ['Server configuration error - AI analysis unavailable'],
-        technical_correlation: []
-      },
-      recommendations: {
-        immediate_actions: ['Configure GEMINI_API_KEY environment variable'],
-        review_items: [],
-        acceptance_criteria: 'Fix server configuration before analysis can proceed'
-      },
-      confidence_score: 1.0,
-      reasoning: 'Server configuration error'
+    console.error('GEMINI_API_KEY not set');
+    const { body, status } = buildErrorResponse({
+      request_id: requestIdFromBody,
+      error_type: 'config_error',
+      retryable: false,
+      details: 'GEMINI_API_KEY environment variable is not set on the AI analyzer service',
+      status: 500,
     });
+    return res.status(status).json(body);
   }
 
-  // Handle structured data analysis (only format needed)
-  return handleStructuredAnalysis(req, res, apiKey);
+  // 2. Schema validation (ajv against ai_request schema).
+  if (!validateRequest(req.body)) {
+    const errs = (validateRequest.errors || [])
+      .map(e => `${e.instancePath || '<root>'} ${e.message}`)
+      .join('; ');
+    const { body, status } = buildErrorResponse({
+      request_id: requestIdFromBody,
+      error_type: 'schema_invalid',
+      retryable: false,
+      details: `request does not match ai_request schema: ${errs}`,
+      status: 400,
+    });
+    return res.status(status).json(body);
+  }
+
+  const { url, request_id, structured_data, screenshots } = req.body;
+
+  // 3. Image validation. Only inspects images that were actually provided;
+  // absent screenshots are fine (the contract allows all-None). Stash the
+  // detected mimeType per image so we send the right Content-Type to Gemini.
+  const validatedImages = [];  // [{ which, b64, mimeType }, ...]
+  for (const [which, b64] of Object.entries(screenshots)) {
+    if (b64 == null) continue;
+    const inspection = inspectImageBase64(b64);
+    if (inspection.error) {
+      const { body, status } = buildErrorResponse({
+        request_id,
+        error_type: 'schema_invalid',
+        retryable: false,
+        details: `screenshots.${which}: ${inspection.error}`,
+        status: 400,
+      });
+      return res.status(status).json(body);
+    }
+    validatedImages.push({ which, b64, mimeType: inspection.mimeType });
+  }
+
+  // 4. Apply payload bounds + build prompt.
+  const { bounded, truncationReport } = prioritizeStructuredData(structured_data);
+  const userPrompt = buildUserPrompt(url, bounded, truncationReport);
+
+  // 5. Build content array for Gemini: image parts first (using detected
+  // mimeType so JPEG isn't sent as PNG), then the combined prompt.
+  const contents = validatedImages.map(({ b64, mimeType }) => ({
+    inlineData: { data: b64, mimeType },
+  }));
+  contents.push(`${SYSTEM_PROMPT}\n\n---\n\n${userPrompt}`);
+
+  // 6. Call Gemini.
+  let rawText;
+  try {
+    const ai = new GoogleGenAI({ apiKey });
+    const response = await ai.models.generateContent({
+      model: DEFAULT_MODEL,
+      contents,
+    });
+    rawText = response.text;
+  } catch (err) {
+    console.error(`Gemini call failed for request_id=${request_id}:`, err.message);
+    // Heuristic mapping. Most provider errors should be retried (transient).
+    // 4xx-shaped errors from the SDK typically indicate auth or quota.
+    const isRateLimit = /429|rate[- ]?limit/i.test(err.message);
+    const { body, status } = buildErrorResponse({
+      request_id,
+      model: DEFAULT_MODEL,
+      error_type: isRateLimit ? 'rate_limited' : 'provider_error',
+      retryable: true,
+      details: `Gemini provider error: ${err.message}`,
+      status: 502,
+    });
+    return res.status(status).json(body);
+  }
+
+  // 7. Parse model output.
+  let modelOutput;
+  try {
+    modelOutput = extractAnalysisJson(rawText);
+  } catch (err) {
+    console.error(`Failed to parse Gemini response for request_id=${request_id}:`, err.message);
+    const { body, status } = buildErrorResponse({
+      request_id,
+      model: DEFAULT_MODEL,
+      error_type: 'response_invalid',
+      retryable: true,  // model variability — retry might succeed
+      details: `model returned non-JSON output: ${err.message}`,
+      status: 502,
+    });
+    return res.status(status).json(body);
+  }
+
+  // 8. Assemble + validate the success response. If validation fails the model
+  // returned a shape we can't honor (missing required fields, bad enums, etc.).
+  let successResponse;
+  try {
+    successResponse = buildSuccessResponse({ request_id, model: DEFAULT_MODEL, modelOutput });
+  } catch (err) {
+    console.error(`Model output failed response-shape validation for request_id=${request_id}:`, err.message);
+    const { body, status } = buildErrorResponse({
+      request_id,
+      model: DEFAULT_MODEL,
+      error_type: 'response_invalid',
+      retryable: true,
+      details: err.message,
+      status: 502,
+    });
+    return res.status(status).json(body);
+  }
+
+  return res.status(200).json(successResponse);
 });
 
-// Structured data analysis handler
-async function handleStructuredAnalysis(req, res, apiKey) {
-  const { url, system_context, structured_data, screenshots, context_hints } = req.body;
-  
-  // Enhanced validation of request data
-  const validationErrors = validateStructuredRequest(req.body);
-  if (validationErrors.length > 0) {
-    return res.status(400).json({
-      overall_severity: 'ERROR',
-      business_impact: 'HIGH',
-      detailed_analysis: {
-        visual_changes: [],
-        functional_impact: validationErrors,
-        technical_correlation: []
-      },
-      recommendations: {
-        immediate_actions: ['Fix request data format', 'Provide all required fields'],
-        review_items: validationErrors,
-        acceptance_criteria: 'Request must include valid structured data and screenshots'
-      },
-      confidence_score: 1.0,
-      reasoning: 'Invalid request format',
-      validation_errors: validationErrors
-    });
-  }
+// Express 5 auto-catches async route rejections, but having a final handler
+// keeps unexpected errors from leaking stack traces into responses.
+app.use((err, req, res, _next) => {
+  console.error('unhandled error:', err);
+  const { body, status } = buildErrorResponse({
+    request_id: null,
+    error_type: 'unknown',
+    retryable: false,
+    details: 'unhandled server error; see service logs',
+    status: 500,
+  });
+  res.status(status).json(body);
+});
 
-  try {
-    const genAI = new GoogleGenerativeAI(apiKey);
-    const modelName = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
-    const model = genAI.getGenerativeModel({ model: modelName });
-
-    // Create enhanced prompt with structured data context
-    const prompt = `
-${system_context}
-
-ANALYSIS TASK:
-Analyze the following web UI regression data for: ${url}
-
-STRUCTURED DATA PROVIDED:
-${JSON.stringify({
-  change_summary: structured_data.change_summary,
-  html_changes_summary: {
-    total_changes: structured_data.html_changes?.summary?.total_changes || 0,
-    structural_changes: structured_data.html_changes?.summary?.structural_changes || 0,
-    content_changes: structured_data.html_changes?.summary?.content_changes || 0
-  },
-  css_changes: {
-    changes_detected: structured_data.css_changes?.changes_detected || false,
-    total_changes: structured_data.css_changes?.summary?.total_changes || 0
-  },
-  js_changes: {
-    changes_detected: structured_data.js_changes?.changes_detected || false,
-    total_changes: structured_data.js_changes?.summary?.total_changes || 0
-  }
-}, null, 2)}
-
-SPECIFIC CODE CHANGES:
-${structured_data.html_changes?.changes ? 
-  structured_data.html_changes.changes.slice(0, 5).map(change => 
-    `- ${change.type}: ${change.description}${change.code_snippet ? '\n  Code: ' + change.code_snippet.substring(0, 200) + '...' : ''}`
-  ).join('\n') : 'No specific code changes provided'}
-
-CONTEXT HINTS:
-- Total HTML changes: ${context_hints?.total_html_changes || 0}
-- CSS changes detected: ${context_hints?.css_changes_detected || false}  
-- JS changes detected: ${context_hints?.js_changes_detected || false}
-- Change severity: ${context_hints?.change_severity || 'unknown'}
-- Has visual differences: ${context_hints?.has_visual_differences || false}
-
-Please analyze the screenshots along with this structured data and provide your assessment in the required JSON format.
-    `;
-
-    // Prepare image parts
-    const imageParts = [];
-    if (screenshots.baseline) {
-      imageParts.push({ inlineData: { data: screenshots.baseline, mimeType: 'image/png' } });
-    }
-    if (screenshots.current) {
-      imageParts.push({ inlineData: { data: screenshots.current, mimeType: 'image/png' } });
-    }
-    if (screenshots.visual_diff) {
-      imageParts.push({ inlineData: { data: screenshots.visual_diff, mimeType: 'image/png' } });
-    }
-
-    const result = await model.generateContent([prompt, ...imageParts]);
-    const responseText = result.response.text();
-
-    // Clean the response to ensure it's valid JSON
-    const cleanedJsonString = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
-    
-    let jsonResponse;
-    try {
-      jsonResponse = JSON.parse(cleanedJsonString);
-      
-      // Validate response has required fields
-      if (!jsonResponse.overall_severity || !jsonResponse.business_impact) {
-        throw new Error('AI response missing required fields');
-      }
-      
-    } catch (parseError) {
-      console.error('Failed to parse AI response:', parseError.message);
-      console.error('Raw response:', cleanedJsonString);
-      
-      // Fallback structured response when AI returns invalid JSON
-      return res.status(500).json({
-        overall_severity: 'ERROR',
-        business_impact: 'HIGH',
-        detailed_analysis: {
-          visual_changes: ['Unable to parse AI analysis response'],
-          functional_impact: ['AI service returned malformed data'],
-          technical_correlation: []
-        },
-        recommendations: {
-          immediate_actions: ['Check AI service configuration', 'Review prompt format'],
-          review_items: ['AI response format'],
-          acceptance_criteria: 'AI service must return valid JSON format'
-        },
-        confidence_score: 0.0,
-        reasoning: 'AI response parsing failed',
-        error_details: {
-          parse_error: parseError.message,
-          raw_response_preview: cleanedJsonString.substring(0, 200) + '...'
-        }
-      });
-    }
-
-    // Add metadata to response
-    jsonResponse.analysis_metadata = {
-      request_type: 'enhanced_structured_analysis',
-      data_sources: ['screenshots', 'html_changes', 'css_changes', 'js_changes'],
-      total_changes_analyzed: context_hints?.total_html_changes || 0,
-      timestamp: new Date().toISOString()
-    };
-
-    res.status(200).json(jsonResponse);
-
-  } catch (error) {
-    console.error('Error in enhanced analysis:', error);
-    res.status(500).json({
-      overall_severity: 'ERROR',
-      business_impact: 'HIGH',
-      detailed_analysis: {
-        visual_changes: [],
-        functional_impact: [`Analysis failed: ${error.message}`],
-        technical_correlation: []
-      },
-      recommendations: {
-        immediate_actions: ['Check AI analyzer service logs', 'Retry analysis'],
-        review_items: [],
-        acceptance_criteria: 'Resolve service error before proceeding'
-      },
-      confidence_score: 0.0,
-      reasoning: `Service error: ${error.message}`
-    });
-  }
-}
-
-app.listen(port, () => {
-  console.log(`Gemini AI service listening on port ${port}`);
+app.listen(PORT, () => {
+  console.log(`AI analyzer service listening on port ${PORT}`);
+  console.log(`  model:          ${DEFAULT_MODEL}`);
+  console.log(`  prompt_sha256:  ${PROMPT_SHA256}`);
+  console.log(`  schemas_sha256: ${SCHEMAS_SHA256}`);
 });

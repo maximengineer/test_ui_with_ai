@@ -1,0 +1,26 @@
+{
+  "additionalProperties": false,
+  "description": "AFR_AI_ENABLED=false skipped the AI call.\n\nUsed for sensitive sites where DOM/screenshots shouldn't leave the local\nnetwork. The comparator still ran; we just didn't ship the data to a\nthird-party model.",
+  "properties": {
+    "checked_at": {
+      "title": "Checked At",
+      "type": "string"
+    },
+    "result_type": {
+      "const": "ai_disabled",
+      "default": "ai_disabled",
+      "title": "Result Type",
+      "type": "string"
+    },
+    "schema_version": {
+      "default": "2026-04-30.1",
+      "title": "Schema Version",
+      "type": "string"
+    }
+  },
+  "required": [
+    "checked_at"
+  ],
+  "title": "AIDisabledMarker",
+  "type": "object"
+}

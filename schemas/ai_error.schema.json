@@ -1,0 +1,81 @@
+{
+  "additionalProperties": false,
+  "description": "The AI call failed. This is NOT an analysis result; it's a typed failure.\n\nDistinct from AIAnalysisResponse so consumers can route failures to a\n\"needs retry\" bucket rather than treating them as a phantom severity.",
+  "properties": {
+    "details": {
+      "title": "Details",
+      "type": "string"
+    },
+    "error_type": {
+      "enum": [
+        "schema_invalid",
+        "timeout",
+        "rate_limited",
+        "provider_error",
+        "response_invalid",
+        "config_error",
+        "unknown"
+      ],
+      "title": "Error Type",
+      "type": "string"
+    },
+    "model": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Model"
+    },
+    "prompt_sha256": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Prompt Sha256"
+    },
+    "request_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Request Id"
+    },
+    "result_type": {
+      "const": "analysis_error",
+      "default": "analysis_error",
+      "title": "Result Type",
+      "type": "string"
+    },
+    "retryable": {
+      "title": "Retryable",
+      "type": "boolean"
+    },
+    "schema_version": {
+      "default": "2026-04-30.1",
+      "title": "Schema Version",
+      "type": "string"
+    }
+  },
+  "required": [
+    "error_type",
+    "retryable",
+    "details"
+  ],
+  "title": "AIAnalysisError",
+  "type": "object"
+}

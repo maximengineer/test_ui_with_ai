@@ -1,0 +1,275 @@
+{
+  "$defs": {
+    "CSSChanges": {
+      "additionalProperties": false,
+      "properties": {
+        "change_types": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Change Types",
+          "type": "array"
+        },
+        "changes": {
+          "items": {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          "title": "Changes",
+          "type": "array"
+        },
+        "changes_detected": {
+          "title": "Changes Detected",
+          "type": "boolean"
+        },
+        "files_changed": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Files Changed",
+          "type": "array"
+        },
+        "summary": {
+          "additionalProperties": true,
+          "title": "Summary",
+          "type": "object"
+        }
+      },
+      "required": [
+        "changes_detected",
+        "change_types",
+        "files_changed",
+        "changes",
+        "summary"
+      ],
+      "title": "CSSChanges",
+      "type": "object"
+    },
+    "ChangeSummary": {
+      "additionalProperties": false,
+      "properties": {
+        "affected_components": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Affected Components",
+          "type": "array"
+        },
+        "ai_analysis_priority": {
+          "enum": [
+            "none",
+            "low",
+            "medium",
+            "high"
+          ],
+          "title": "Ai Analysis Priority",
+          "type": "string"
+        },
+        "change_categories": {
+          "additionalProperties": true,
+          "title": "Change Categories",
+          "type": "object"
+        },
+        "overall_assessment": {
+          "additionalProperties": true,
+          "title": "Overall Assessment",
+          "type": "object"
+        },
+        "recommendation": {
+          "title": "Recommendation",
+          "type": "string"
+        }
+      },
+      "required": [
+        "overall_assessment",
+        "change_categories",
+        "affected_components",
+        "recommendation",
+        "ai_analysis_priority"
+      ],
+      "title": "ChangeSummary",
+      "type": "object"
+    },
+    "HTMLChanges": {
+      "additionalProperties": false,
+      "properties": {
+        "change_types": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Change Types",
+          "type": "array"
+        },
+        "changes": {
+          "items": {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          "title": "Changes",
+          "type": "array"
+        },
+        "changes_detected": {
+          "title": "Changes Detected",
+          "type": "boolean"
+        },
+        "summary": {
+          "additionalProperties": true,
+          "title": "Summary",
+          "type": "object"
+        }
+      },
+      "required": [
+        "changes_detected",
+        "change_types",
+        "changes",
+        "summary"
+      ],
+      "title": "HTMLChanges",
+      "type": "object"
+    },
+    "JSChanges": {
+      "additionalProperties": false,
+      "properties": {
+        "change_types": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Change Types",
+          "type": "array"
+        },
+        "changes": {
+          "items": {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          "title": "Changes",
+          "type": "array"
+        },
+        "changes_detected": {
+          "title": "Changes Detected",
+          "type": "boolean"
+        },
+        "files_changed": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Files Changed",
+          "type": "array"
+        },
+        "summary": {
+          "additionalProperties": true,
+          "title": "Summary",
+          "type": "object"
+        }
+      },
+      "required": [
+        "changes_detected",
+        "change_types",
+        "files_changed",
+        "changes",
+        "summary"
+      ],
+      "title": "JSChanges",
+      "type": "object"
+    },
+    "Screenshots": {
+      "additionalProperties": false,
+      "description": "Base64-encoded screenshot bytes. All optional; at least one expected.\n\nThe Node side enforces image size + magic-byte validation in Phase A.1.4.\nPydantic only validates the strings are valid base64.",
+      "properties": {
+        "baseline": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Baseline"
+        },
+        "current": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Current"
+        },
+        "visual_diff": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Visual Diff"
+        }
+      },
+      "title": "Screenshots",
+      "type": "object"
+    },
+    "StructuredData": {
+      "additionalProperties": false,
+      "properties": {
+        "change_summary": {
+          "$ref": "#/$defs/ChangeSummary"
+        },
+        "css_changes": {
+          "$ref": "#/$defs/CSSChanges"
+        },
+        "html_changes": {
+          "$ref": "#/$defs/HTMLChanges"
+        },
+        "js_changes": {
+          "$ref": "#/$defs/JSChanges"
+        }
+      },
+      "required": [
+        "change_summary",
+        "html_changes",
+        "css_changes",
+        "js_changes"
+      ],
+      "title": "StructuredData",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "request_id": {
+      "title": "Request Id",
+      "type": "string"
+    },
+    "schema_version": {
+      "default": "2026-04-30.1",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "screenshots": {
+      "$ref": "#/$defs/Screenshots"
+    },
+    "structured_data": {
+      "$ref": "#/$defs/StructuredData"
+    },
+    "url": {
+      "title": "Url",
+      "type": "string"
+    }
+  },
+  "required": [
+    "request_id",
+    "url",
+    "structured_data",
+    "screenshots"
+  ],
+  "title": "AIAnalysisRequest",
+  "type": "object"
+}
