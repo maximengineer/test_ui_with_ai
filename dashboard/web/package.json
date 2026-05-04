@@ -1,0 +1,39 @@
+{
+  "name": "web",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "dev:full": "concurrently --names BACKEND,FRONTEND --prefix-colors blue,magenta --kill-others-on-fail \"AFR_DASHBOARD_DEV_MODE=true ../../.venv/bin/uvicorn dashboard.api:app --port 8080 --reload --app-dir ../..\" \"vite\"",
+    "build": "tsc -b && vite build",
+    "lint": "eslint .",
+    "preview": "vite preview",
+    "gen:api": "openapi-typescript ../../schemas/dashboard-openapi.json -o src/api/schema.gen.ts"
+  },
+  "dependencies": {
+    "@tanstack/react-query": "^5.100.9",
+    "openapi-fetch": "^0.17.0",
+    "react": "^19.2.5",
+    "react-dom": "^19.2.5",
+    "react-router-dom": "^7.14.2"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@tailwindcss/vite": "^4.2.4",
+    "@types/node": "^24.12.2",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^6.0.1",
+    "concurrently": "^9.2.1",
+    "eslint": "^10.2.1",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "eslint-plugin-react-refresh": "^0.5.2",
+    "globals": "^17.5.0",
+    "openapi-typescript": "^7.13.0",
+    "tailwindcss": "^4.2.4",
+    "typescript": "~5.9",
+    "typescript-eslint": "^8.58.2",
+    "vite": "^8.0.10"
+  }
+}
