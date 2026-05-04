@@ -443,6 +443,8 @@ async def main(
     output_dir: str,
     is_baseline: bool = False,
     use_date_structure: bool = None,
+    *,
+    run_id: str | None = None,
 ) -> bool:
     """Crawl `sites`, publishing artifacts under `<output_dir>/<date>/<run_id>/`.
 
@@ -464,7 +466,7 @@ async def main(
     """
     from ..common.preconditions import require_no_live_lock
     from ..common.run_context import run_context
-    from ..common.run_id import new_run_id
+    from ..common.run_id import is_valid_run_id, new_run_id
     from ..common.run_record import write_run_record
     from ..comparator.finder import update_latest_symlink
     from ..config import settings
@@ -498,9 +500,16 @@ async def main(
     # lock — prevents two concurrent crawls clobbering shared state. Stale
     # locks (dead PGID) are silently ignored so a previous SIGKILL doesn't
     # block forever.
+    # Validate run_id BEFORE acquiring the lock — a bogus run_id from a
+    # misconfigured caller should fail fast, not after up to a 5s lock
+    # wait. Comparator engine validates in the same position; aligning here.
+    if run_id is None:
+        run_id = new_run_id()
+    elif not is_valid_run_id(run_id):
+        raise ValueError(f"run_id={run_id!r} is not a valid ULID")
+
     require_no_live_lock(date_dir, kind_label=kind)
 
-    run_id = new_run_id()
     print(f"Creating {kind} snapshot run {run_id} for date {date_str} (Dublin time)")
 
     # Phase B.3.4: persist a run-invocation record outside the run dir so a

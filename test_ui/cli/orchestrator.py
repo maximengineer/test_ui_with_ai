@@ -42,17 +42,37 @@ class Orchestrator:
         self.reporter = ReportGenerator(settings, self.gemini_url, client=client)
 
     async def create_baseline(
-        self, sites: list, output_dir: str, is_baseline: bool = True
+        self,
+        sites: list,
+        output_dir: str,
+        is_baseline: bool = True,
+        *,
+        run_id: str | None = None,
     ) -> bool:
-        """Create baseline snapshots with date-based directory structure."""
-        return await crawler_main(sites, output_dir, is_baseline=is_baseline)
+        """Create baseline snapshots with date-based directory structure.
 
-    async def create_current(self, sites: list, output_dir: str) -> bool:
+        `run_id` is forwarded to `crawler.engine.main` so the dashboard can
+        pre-allocate the ULID it spawned this subprocess for. None means the
+        engine generates one itself (CLI default).
+        """
+        return await crawler_main(
+            sites, output_dir, is_baseline=is_baseline, run_id=run_id
+        )
+
+    async def create_current(
+        self, sites: list, output_dir: str, *, run_id: str | None = None
+    ) -> bool:
         """Create current snapshots with date-based directory structure."""
-        return await crawler_main(sites, output_dir, is_baseline=False)
+        return await crawler_main(sites, output_dir, is_baseline=False, run_id=run_id)
 
     async def compare_with_baseline(
-        self, baseline_dir: Path, current_dir: Path, output_dir: Path, sites: list
+        self,
+        baseline_dir: Path,
+        current_dir: Path,
+        output_dir: Path,
+        sites: list,
+        *,
+        run_id: str | None = None,
     ):
         """Runs comparison and saves the results to a file.
 
@@ -88,7 +108,10 @@ class Orchestrator:
             f"[cyan]Comparing baseline '{baseline_path}' with current '{current_path}'...[/cyan]"
         )
         comparison_results = self.comparator.compare_all(
-            baseline_dir=baseline_path, current_dir=current_path, sites=sites
+            baseline_dir=baseline_path,
+            current_dir=current_path,
+            sites=sites,
+            run_id=run_id,
         )
 
         # The comparator now returns a list of results, one per URL
@@ -104,7 +127,13 @@ class Orchestrator:
 
         return comparison_results
 
-    async def generate_enhanced_report(self, comparator_root: Path, report_date: str):
+    async def generate_enhanced_report(
+        self,
+        comparator_root: Path,
+        report_date: str,
+        *,
+        run_id: str | None = None,
+    ):
         """Generate enhanced AI-powered HTML report; publish under report_dir/<date>/<run_id>/.
 
         Phase B.1: opens an atomic publication context for the report's own
@@ -162,7 +191,13 @@ class Orchestrator:
 
         report_date_dir = settings.report_dir / report_date
         report_date_dir.mkdir(parents=True, exist_ok=True)
-        run_id = new_run_id()
+        # Caller (e.g. dashboard) may pre-allocate a run_id; otherwise we
+        # generate one. Validated as a real ULID so a typo lands here, not
+        # in directory naming downstream.
+        if run_id is None:
+            run_id = new_run_id()
+        elif not is_valid_run_id(run_id):
+            raise ValueError(f"run_id={run_id!r} is not a valid ULID")
         source_run_ids = {"comparator": comparator_run_id} if comparator_run_id else {}
 
         write_run_record(

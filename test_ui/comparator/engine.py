@@ -52,6 +52,8 @@ class ComparatorEngine:
         baseline_dir: Path,
         current_dir: Path,
         sites: list[dict],
+        *,
+        run_id: str | None = None,
     ) -> list[dict[str, Any]]:
         """Compare all snapshots; publish a comparator run; return aggregated list.
 
@@ -66,7 +68,13 @@ class ComparatorEngine:
         legacy/test callers passing dicts without an id).
         """
         date_str = settings.get_current_date()
-        run_id = new_run_id()
+        # Caller (e.g. dashboard) may pre-allocate a run_id so it can track
+        # the subprocess by ID before it starts. Validated as a real ULID
+        # so a typo lands here, not in directory naming downstream.
+        if run_id is None:
+            run_id = new_run_id()
+        elif not is_valid_run_id(run_id):
+            raise ValueError(f"run_id={run_id!r} is not a valid ULID")
         date_dir = settings.comparator_dir / date_str
         date_dir.mkdir(parents=True, exist_ok=True)
 

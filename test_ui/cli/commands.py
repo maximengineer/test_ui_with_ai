@@ -73,6 +73,17 @@ def cli(ctx, sites_file):
         raise click.Abort()
 
 
+# Help text for the dashboard-only `--run-id` option. Hidden from the
+# top-level `--help` is tempting (it's not for human use) but we leave
+# it visible so the operator who notices it in `ps -ef` output can find
+# its docs without grep-ing the source.
+_RUN_ID_HELP = (
+    "Pre-allocated ULID to use as this run's identifier. Intended for the "
+    "dashboard to spawn subprocesses it can then track by ID. CLI users "
+    "should omit this flag — the engine generates a fresh ULID."
+)
+
+
 @cli.command()
 @click.option(
     "--output",
@@ -81,8 +92,9 @@ def cli(ctx, sites_file):
     required=True,
     help="Output directory for baseline",
 )
+@click.option("--run-id", "run_id", default=None, help=_RUN_ID_HELP)
 @click.pass_context
-def snapshot(ctx, output):
+def snapshot(ctx, output, run_id):
     """Create baseline snapshots of URLs with date-based + per-run structure.
 
     Phase B.1: each invocation publishes a fresh `run_id` directory under
@@ -99,11 +111,18 @@ def snapshot(ctx, output):
 
     async def _run():
         async with _open_orchestrator() as orchestrator:
-            await orchestrator.create_baseline(sites, output, is_baseline=True)
+            await orchestrator.create_baseline(
+                sites, output, is_baseline=True, run_id=run_id
+            )
 
     try:
         asyncio.run(_run())
     except PreconditionFailed as e:
+        console.print(f"[red]❌ {e}[/red]")
+        raise click.Abort() from e
+    except ValueError as e:
+        # Engine raises ValueError on invalid --run-id; surface as a
+        # friendly Click abort instead of a Python stack trace.
         console.print(f"[red]❌ {e}[/red]")
         raise click.Abort() from e
     console.print(
@@ -119,8 +138,9 @@ def snapshot(ctx, output):
     required=True,
     help="Output directory for current snapshots",
 )
+@click.option("--run-id", "run_id", default=None, help=_RUN_ID_HELP)
 @click.pass_context
-def current(ctx, output):
+def current(ctx, output, run_id):
     """Create current snapshots of URLs with date-based + per-run structure.
 
     Phase B.2: refuses to start if another current run for the same date
@@ -133,11 +153,15 @@ def current(ctx, output):
 
     async def _run():
         async with _open_orchestrator() as orchestrator:
-            await orchestrator.create_current(sites, output)
+            await orchestrator.create_current(sites, output, run_id=run_id)
 
     try:
         asyncio.run(_run())
     except PreconditionFailed as e:
+        console.print(f"[red]❌ {e}[/red]")
+        raise click.Abort() from e
+    except ValueError as e:
+        # Engine raises ValueError on invalid --run-id.
         console.print(f"[red]❌ {e}[/red]")
         raise click.Abort() from e
     console.print(
@@ -167,8 +191,9 @@ def current(ctx, output):
     required=False,
     help="Output directory for reports and results (deprecated - comparator creates per-URL structure)",
 )
+@click.option("--run-id", "run_id", default=None, help=_RUN_ID_HELP)
 @click.pass_context
-def compare(ctx, baseline, current, output):
+def compare(ctx, baseline, current, output, run_id):
     """Compares baseline with current, saving results."""
     from ..common.preconditions import PreconditionFailed
 
@@ -185,11 +210,16 @@ def compare(ctx, baseline, current, output):
                 current_dir=Path(current),
                 output_dir=Path(output),
                 sites=sites,
+                run_id=run_id,
             )
 
     try:
         asyncio.run(_run())
     except PreconditionFailed as e:
+        console.print(f"[red]❌ {e}[/red]")
+        raise click.Abort() from e
+    except ValueError as e:
+        # Engine raises ValueError on invalid --run-id.
         console.print(f"[red]❌ {e}[/red]")
         raise click.Abort() from e
 
@@ -207,8 +237,9 @@ def compare(ctx, baseline, current, output):
     "-d",
     help="Specific date to generate report for (e.g., 01-09-2025). If not provided, uses latest available.",
 )
+@click.option("--run-id", "run_id", default=None, help=_RUN_ID_HELP)
 @click.pass_context
-def enhanced_report(ctx, comparator_data, date):
+def enhanced_report(ctx, comparator_data, date, run_id):
     """Generate enhanced AI-powered HTML report; published under data/report/<date>/<run_id>/.
 
     Phase B.1 dropped the `--output` flag — the report has always written to
@@ -261,6 +292,7 @@ def enhanced_report(ctx, comparator_data, date):
                 await orchestrator.generate_enhanced_report(
                     comparator_root=comparator_root,
                     report_date=report_date,
+                    run_id=run_id,
                 )
 
         asyncio.run(_run())
@@ -276,6 +308,11 @@ def enhanced_report(ctx, comparator_data, date):
         # same friendly format as the other commands — without the
         # misleading "Enhanced report generation failed:" prefix that the
         # generic Exception branch below would add.
+        console.print(f"[red]❌ {e}[/red]")
+        raise click.Abort() from e
+    except ValueError as e:
+        # Engine raises ValueError on invalid --run-id; same friendly
+        # treatment as PreconditionFailed.
         console.print(f"[red]❌ {e}[/red]")
         raise click.Abort() from e
     except Exception as e:
