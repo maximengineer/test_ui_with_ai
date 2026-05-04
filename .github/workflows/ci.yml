@@ -144,3 +144,34 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
       - run: cd ai_analyzer && npm ci
       - run: cd ai_analyzer && npm test
+
+  # -------------------------------------------------------------------------
+  # 7. dashboard-openapi-drift — same idea as #5 (schema-drift) but for the
+  # dashboard's OpenAPI snapshot at schemas/dashboard-openapi.json. The
+  # React frontend's TypeScript types are generated from this file via
+  # `npm run gen:api` (openapi-typescript). A backend change without the
+  # snapshot regen would leave the SPA compiling against a fictional API.
+  # Round-3 milestone-review HIGH #4 caught the missing CI guardrail.
+  # -------------------------------------------------------------------------
+  dashboard-openapi-drift:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - name: Install Poetry
+        run: pip install "poetry==${{ env.POETRY_VERSION }}"
+      - name: Install Python deps
+        run: poetry config virtualenvs.create false && poetry install --only main --no-interaction --no-ansi
+      - name: Re-export dashboard OpenAPI
+        # Same incantation as `make` would use; dumps `app.openapi()` to
+        # the canonical snapshot path.
+        run: |
+          python -c "import json; from dashboard.api.main import create_app; print(json.dumps(create_app(dev_mode=False).openapi(), indent=2))" \
+            > schemas/dashboard-openapi.json
+      - name: Assert no drift
+        # If the snapshot changed, show the diff and exit non-zero. Fix
+        # locally with the same command above + commit, then run
+        # `cd dashboard/web && npm run gen:api` so the TS types match.
+        run: git diff --exit-code schemas/dashboard-openapi.json

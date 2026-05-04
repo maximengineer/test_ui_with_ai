@@ -56,6 +56,73 @@ services:
       retries: 5
       start_period: 15s
 
+  # Dashboard (Phase C.1). Runs the FastAPI app + spawns `python -m test_ui ...`
+  # subprocesses for crawls/comparisons/reports. Linux-only by design — see
+  # `dashboard/api/main.py:_require_linux`. Mac/Windows operators MUST launch
+  # this service to use the dashboard at all (host-native invocation hard-fails
+  # with a pointer to this file).
+  dashboard:
+    build:
+      context: .
+      dockerfile: Dockerfile.dashboard
+    env_file:
+      - .env
+    environment:
+      # Reach the analyzer over the internal Docker network. The dashboard's
+      # /api/health probes this with a 2s timeout — analyzer-down doesn't
+      # take down the dashboard.
+      - AFR_AI_ANALYZER_SERVICE_URL=http://ai-analyzer:3000
+      # AFR_DATA_ROOT and AFR_DASHBOARD_{BIND,PORT} are baked into the image
+      # but listed here for operator-visibility — easier to grep than reading
+      # the Dockerfile.
+      - AFR_DATA_ROOT=/data
+      - AFR_DASHBOARD_BIND=0.0.0.0
+      - AFR_DASHBOARD_PORT=8080
+      # Vite CORS rules. Safe to leave on inside the container (the browser
+      # only sends credentials when the origin matches localhost:5173 anyway,
+      # and the production deployment serves the SPA same-origin).
+      - AFR_DASHBOARD_DEV_MODE=true
+    volumes:
+      # Persist artifacts across container restarts. SAME mount as the
+      # test-ui service so a baseline created via `make baseline` shows up
+      # in the dashboard's /api/runs list (sync picks it up at startup).
+      - ./data:/data
+      # Mount sites.yml read-only — the spawned subprocesses pass
+      # `--sites-file <bundled path>`, which lands at `/app/test_ui/sites.yml`
+      # inside the container; mounting overrides that bundled copy with the
+      # operator's edits (no rebuild needed when adding/removing sites).
+      - ./test_ui/sites.yml:/app/test_ui/sites.yml:ro
+      # Mount source for fast dev iteration. SURGICAL — we mount the
+      # Python sub-packages individually instead of the whole `dashboard/`
+      # directory because the latter would shadow the baked `dashboard/web/dist/`
+      # bundle from Stage 2 of the Dockerfile. (Round-3 milestone-review
+      # CRITICAL #1 caught this — a fresh clone has `dist/` gitignored, so
+      # mounting `./dashboard:/app/dashboard` made the prod image serve
+      # API only with no SPA, with `mount_spa` quietly logging "no SPA build".)
+      #
+      # Edits to `dashboard/api/*.py` and `test_ui/*.py` still hot-reload
+      # via uvicorn `--reload` (when running `make dashboard-dev`); SPA
+      # source edits require either the Vite dev server (`make
+      # dashboard-dev` parallels both) or a `docker compose build`.
+      - ./dashboard/api:/app/dashboard/api
+      - ./test_ui:/app/test_ui
+    ports:
+      - "8080:8080"
+    depends_on:
+      ai-analyzer:
+        condition: service_healthy
+    networks:
+      - test-ui-network
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:8080/api/health" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      # The startup-sync scans `data/` which on a populated tree may take
+      # several seconds; give the lifespan room to finish before the
+      # health-check declares the service unhealthy.
+      start_period: 30s
+
 networks:
   test-ui-network:
     driver: bridge

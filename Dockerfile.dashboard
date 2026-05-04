@@ -1,0 +1,80 @@
+# Dashboard image (Phase C.1 + C.3 deliverable). Multi-stage:
+#   Stage 1 (web-builder, Node 20):
+#     - npm ci + vite build → /app/dashboard/web/dist
+#   Stage 2 (runtime, Python 3.13):
+#     - copy the web/dist bundle in alongside the Python code
+#     - uvicorn serves both /api/* AND the SPA from the same origin
+#
+# Same-origin serving is the production posture: no CORS, the React
+# dev-server proxy doesn't apply, and the only network hop the
+# operator's browser makes is to :8080. Dev workflow uses Vite at
+# :5173 with the proxy — see `make dashboard-dev`.
+
+# --------------------------------------------------------------------------- #
+# Stage 1: build the React SPA.                                              #
+# --------------------------------------------------------------------------- #
+FROM node:20-bookworm-slim AS web-builder
+
+WORKDIR /web
+
+# package*.json first so npm ci's layer is cached across source-only edits.
+COPY dashboard/web/package.json dashboard/web/package-lock.json ./
+RUN npm ci --no-audit --no-fund
+
+# Source last so a code change doesn't invalidate the npm-ci layer.
+COPY dashboard/web/ ./
+
+# `npm run build` runs `tsc -b && vite build` and emits ./dist
+RUN npm run build
+
+# --------------------------------------------------------------------------- #
+# Stage 2: Python runtime + the built SPA bundle.                            #
+# --------------------------------------------------------------------------- #
+FROM python:3.13 AS dependencies
+
+# System dependencies. Same set as the test-ui Dockerfile because the
+# dashboard's spawned subprocesses are exactly the test-ui CLI — they
+# need every native library the standalone CLI image needs (Playwright
+# headless chromium, opencv-python-headless, Pillow / scikit-image).
+RUN apt-get update && apt-get install -y --no-install-recommends \
+  build-essential \
+  curl git ca-certificates \
+  libjpeg-dev libpng-dev libwebp-dev \
+  libglib2.0-0 libgomp1 \
+  libnspr4 libnss3 libdbus-1-3 \
+  libatk1.0-0 libatk-bridge2.0-0 libcups2 \
+  libxkbcommon0 libatspi2.0-0 \
+  libxcomposite1 libxdamage1 libxfixes3 libxrandr2 \
+  libgbm1 libasound2 \
+  && rm -rf /var/lib/apt/lists/*
+
+RUN pip install --no-cache-dir poetry==1.8.3
+
+WORKDIR /app
+
+COPY pyproject.toml poetry.lock* ./
+
+# Main deps only — pytest/ruff aren't needed in the runtime image.
+RUN poetry config virtualenvs.create false \
+  && poetry install --only main --no-interaction --no-ansi
+
+# Playwright chromium for spawned crawler subprocesses.
+RUN playwright install chromium
+
+FROM dependencies AS runtime
+
+COPY dashboard ./dashboard
+COPY test_ui ./test_ui
+
+# Pull in the SPA bundle from stage 1. The dashboard's `mount_spa`
+# resolves `dashboard/web/dist` relative to `dashboard/api/spa.py`,
+# so the destination here mirrors the source-tree layout exactly.
+COPY --from=web-builder /web/dist ./dashboard/web/dist
+
+ENV AFR_DATA_ROOT=/data
+ENV AFR_DASHBOARD_BIND=0.0.0.0
+ENV AFR_DASHBOARD_PORT=8080
+
+EXPOSE 8080
+
+CMD ["python", "-m", "dashboard.api"]

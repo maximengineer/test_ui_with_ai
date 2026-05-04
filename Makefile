@@ -1,4 +1,4 @@
-.PHONY: baseline current compare report report-date clean-baseline clean-current clean-reports clean-comparator clean-all test test-local-baseline test-local-current test-local-comparator test-local-report test-local-report-date test-local-report-with-ai test-ai-analyzer test-full test-local-full test-existing-data audit help
+.PHONY: baseline current compare report report-date clean-baseline clean-current clean-reports clean-comparator clean-all test test-local-baseline test-local-current test-local-comparator test-local-report test-local-report-date test-local-report-with-ai test-ai-analyzer test-full test-local-full test-existing-data audit dashboard-dev dashboard-dev-backend dashboard-docker dashboard-build dashboard-logs dashboard-down help
 
 # === Individual Step Commands ===
 
@@ -114,6 +114,50 @@ test-existing-data:
 	$(MAKE) test-local-report
 	@echo "Test completed! Check data/report/ for results."
 
+# === Dashboard (Phase C.1) ===
+
+# Host-native dev: uvicorn (--reload) + Vite dev server in parallel
+# via `concurrently` (devDep in dashboard/web). LINUX ONLY — see
+# `_require_linux` in dashboard/api/main.py. Mac/Windows operators
+# use `make dashboard-docker` instead.
+#
+# Backend: http://localhost:8080 (uvicorn auto-reloads on Python edits)
+# Frontend: http://localhost:5173 (Vite proxies /api → :8080; HMR for TS)
+#
+# AFR_DASHBOARD_DEV_MODE=true (set in package.json's dev:full script)
+# enables the CORS middleware so the Vite dev server can hit the
+# backend cross-origin.
+dashboard-dev:
+	npm --prefix dashboard/web run dev:full
+
+# Backend-only host-native uvicorn (no Vite). For when you only want
+# to drive the API directly (e.g. with curl) and don't need the SPA.
+dashboard-dev-backend:
+	AFR_DASHBOARD_DEV_MODE=true .venv/bin/uvicorn dashboard.api:app --host 127.0.0.1 --port 8080 --reload
+
+# Cross-platform: launch the dashboard in Docker. Brings up ai-analyzer
+# alongside it (the dashboard's healthcheck depends on analyzer-healthy).
+# Use `make dashboard-logs` to tail; `make dashboard-down` to stop.
+dashboard-docker:
+	docker compose up -d dashboard
+	@echo ""
+	@echo "Dashboard:    http://localhost:8080/api/health"
+	@echo "AI analyzer:  http://localhost:3000/health"
+	@echo "Logs:         make dashboard-logs"
+	@echo "Stop:         make dashboard-down"
+
+# Force-rebuild the dashboard image (e.g. after editing the Dockerfile or
+# bumping pyproject.toml). Source-code edits don't need a rebuild because
+# `dashboard/` and `test_ui/` are mounted read-write in compose.
+dashboard-build:
+	docker compose build dashboard
+
+dashboard-logs:
+	docker compose logs -f dashboard
+
+dashboard-down:
+	docker compose stop dashboard ai-analyzer
+
 # Help command showing all available Make targets
 help:
 	@echo "=== AI-Powered UI Regression Testing Makefile ==="
@@ -150,6 +194,14 @@ help:
 	@echo "  audit              - Check source for hardcoded data paths (Phase A.0.3)"
 	@echo "  test-ai-analyzer   - Check AI analyzer service health"
 	@echo "  help               - Show this help message"
+	@echo ""
+	@echo "📊 DASHBOARD COMMANDS (Phase C):"
+	@echo "  dashboard-dev          - Host-native uvicorn + Vite (Linux only)"
+	@echo "  dashboard-dev-backend  - Host-native uvicorn ONLY (no SPA)"
+	@echo "  dashboard-docker       - Launch dashboard in Docker (cross-platform)"
+	@echo "  dashboard-build        - Rebuild the dashboard image"
+	@echo "  dashboard-logs         - Tail the dashboard container logs"
+	@echo "  dashboard-down         - Stop dashboard + ai-analyzer containers"
 	@echo ""
 	@echo "📦 ENV VARS (see .env.example for full list):"
 	@echo "  AFR_AI_ENABLED=false   - Skip AI calls; write ai_disabled.json markers"

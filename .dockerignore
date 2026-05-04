@@ -1,0 +1,42 @@
+# Files NOT copied into the Docker build context.
+#
+# Reduces build-context upload size and prevents host-only paths (`.venv/`,
+# `__pycache__/`) from leaking into the image. The runtime images are
+# copy-explicit (`COPY dashboard ./dashboard` not `COPY . .`), so this list
+# is mostly defense-in-depth — anything not COPY'd is already excluded —
+# but the bytes still get sent to the daemon during `docker build`, so
+# trimming them speeds up rebuilds noticeably on a populated `data/` tree.
+
+# Generated / runtime artifacts
+data/
+.venv/
+.pytest_cache/
+.ruff_cache/
+**/__pycache__/
+**/*.pyc
+**/.cmem-archive/
+
+# Dev tooling state
+.git/
+.github/
+.claude/
+.vscode/
+.idea/
+
+# Test scaffolding (the runtime image doesn't run tests)
+tests/
+
+# Node-side artifacts that aren't part of the dashboard image
+ai_analyzer/node_modules/
+
+# Editor / OS noise
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# Docs that don't belong in the image
+README.md
+REFACTOR_AND_DASHBOARD_PLAN.md
+CLAUDE.md
+docs/
