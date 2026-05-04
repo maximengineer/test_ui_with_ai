@@ -52,13 +52,26 @@ def slugify(value: str) -> str:
 
 
 class Site(BaseModel):
-    """A single entry in sites.yml. `id` is the stable filesystem-safe key."""
+    """A single entry in sites.yml. `id` is the stable filesystem-safe key.
+
+    `name` and `url` are min_length=1 so a typo that produces an empty
+    string fails at model construction, not at the next pipeline stage
+    that tries to read a directory named ''. The loader already raises
+    on missing `url`; this catches programmatic callers (CRUD routes,
+    migrations) that bypass the loader.
+
+    `max_length` caps are generous-but-bounded: 200 for name (display
+    text — anything longer is a copy-paste accident), 2048 for url
+    (the practical HTTP URL ceiling — RFC 7230 doesn't impose one but
+    most stacks do). Stops a 10MB-name DoS from bloating sites.yml
+    and slowing down every subsequent load.
+    """
 
     model_config = ConfigDict(extra="forbid")
 
-    id: str = Field(min_length=1, pattern=r"^[a-z0-9][a-z0-9_-]*$")
-    name: str
-    url: str
+    id: str = Field(min_length=1, max_length=200, pattern=r"^[a-z0-9][a-z0-9_-]*$")
+    name: str = Field(min_length=1, max_length=200)
+    url: str = Field(min_length=1, max_length=2048)
 
 
 def dedupe_slug(candidate: str, taken: set[str]) -> str:
@@ -149,6 +162,238 @@ def load_sites(path: str | Path) -> list[Site]:
     return [_coerce_to_site(raw, taken_ids=taken) for raw in raw_sites]
 
 
+# --------------------------------------------------------------------------- #
+# CRUD (Phase C.2 — dashboard slice).                                         #
+# --------------------------------------------------------------------------- #
+#
+# These helpers mutate `sites.yml` for the dashboard's POST/PATCH/DELETE
+# routes. They use `ruamel.yaml` round-trip mode so operator-authored
+# comments survive the round-trip — `yaml.safe_dump` would silently drop
+# them, which is the worst kind of UX regression for an ops-edited file.
+#
+# Writes are atomic (`tmp + rename`) so a crash mid-write can't leave a
+# half-formed YAML on disk that breaks the next dashboard startup.
+
+
+# Note: there is intentionally NO `SiteAlreadyExists` exception. The Site
+# CRUD doesn't expose `id` as a client-settable field — `add_site` always
+# auto-generates the id by slugifying `name` and appending a numeric
+# suffix on collision (`-2`, `-3`, …). So an "id already exists" condition
+# is structurally impossible from the public API. Two sites with the same
+# `name` get distinct ids by design (operator may genuinely have two
+# subsections of the same site).
+
+
+class SiteNotFound(ValueError):
+    """No site with the given id exists in the file."""
+
+
+def _ruamel_yaml():
+    """Return a ruamel.yaml YAML() configured for round-trip preservation.
+
+    Constructed lazily so the import cost is paid only by callers that
+    actually mutate the file; the read path (`load_sites`) stays on PyYAML
+    which is faster and good enough for read-only validation.
+    """
+    from ruamel.yaml import YAML
+
+    y = YAML(typ="rt")
+    # Preserve quotes / structure as much as possible. The defaults are
+    # already round-trip-friendly; explicit settings here are for clarity
+    # and to pin the behavior against a future ruamel default change.
+    y.preserve_quotes = True
+    y.indent(mapping=2, sequence=4, offset=2)
+    return y
+
+
+def _atomic_write_yaml(path: Path, data) -> None:
+    """Write `data` to `path` via tmp+rename (atomic on the same FS).
+
+    Uses ruamel's dump so round-trip-preserved structures (comments,
+    quote styles) survive. The tmp file goes in the same directory so the
+    rename stays atomic — across-filesystem renames are NOT atomic and
+    would defeat the point.
+    """
+    yaml_rt = _ruamel_yaml()
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    try:
+        with tmp.open("w", encoding="utf-8") as f:
+            yaml_rt.dump(data, f)
+        tmp.replace(path)
+    except Exception:
+        # Clean up the half-written tmp so a retry doesn't see stale state.
+        tmp.unlink(missing_ok=True)
+        raise
+
+
+def _load_for_mutation(path: Path):
+    """Load `sites.yml` with ruamel for in-place mutation.
+
+    Returns the parsed structure. Mutates are applied to it directly,
+    then `_atomic_write_yaml` writes it back with comments preserved.
+    """
+    yaml_rt = _ruamel_yaml()
+    with path.open(encoding="utf-8") as f:
+        data = yaml_rt.load(f) or {}
+    if "sites" not in data or data["sites"] is None:
+        # File exists but `sites:` is empty/missing — initialize so callers
+        # can append without a None-check. ruamel's CommentedSeq behaves
+        # like a list for our purposes.
+        data["sites"] = []
+    return data
+
+
+def _verify_full_load(path: Path) -> None:
+    """Ensure the post-write file still loads cleanly via `load_sites`.
+
+    Defends against a write that succeeded structurally but produced a
+    file that the read path can't validate — e.g. a pre-existing entry
+    with an invalid id pattern that wasn't a problem until our write
+    forced a re-validate. We deliberately call this with the strict
+    Pydantic loader so any latent corruption is surfaced immediately
+    rather than at the next dashboard read.
+    """
+    load_sites(path)
+
+
+def _atomic_rollback(path: Path, original_bytes: bytes | None) -> None:
+    """Restore `path` to `original_bytes` (or remove it if it didn't
+    exist before the failed write). Atomic via tmp+rename — a crash
+    mid-rollback can't leave the file half-overwritten.
+
+    Round-3 review caught that the previous rollback used a plain
+    `path.write_bytes()`, which is non-atomic: a crash between truncation
+    and write completion would leave the file empty. The tmp+rename
+    pattern below matches `_atomic_write_yaml`'s atomicity guarantee.
+    """
+    if original_bytes is None:
+        # File didn't exist pre-write — undo by removing.
+        path.unlink(missing_ok=True)
+        return
+    tmp = path.with_suffix(path.suffix + ".rollback")
+    try:
+        tmp.write_bytes(original_bytes)
+        tmp.replace(path)
+    except Exception:
+        tmp.unlink(missing_ok=True)
+        raise
+
+
+def _verify_or_rollback(path: Path, original_bytes: bytes | None) -> None:
+    """Run `_verify_full_load(path)`. On failure, atomically restore
+    `original_bytes` and re-raise. Shared between `add_site` and
+    `delete_site` (round-3 #M5 made this symmetric — pre-fix only
+    `add_site` rolled back, leaving `delete` to wedge the file in
+    a permanently-unloadable state on pre-existing corruption).
+    """
+    try:
+        _verify_full_load(path)
+    except Exception:
+        _atomic_rollback(path, original_bytes)
+        raise
+
+
+def add_site(path: Path, *, name: str, url: str) -> Site:
+    """Append a new site. The id is auto-derived from `slugify(name)` with
+    a numeric `-N` suffix on collision — see `dedupe_slug`. There is no
+    "id already exists" failure mode by design (see the SiteNotFound
+    block comment above for the rationale).
+
+    Validates name + url via the `Site` Pydantic model BEFORE touching
+    the file, so an empty/invalid input fails fast. After the atomic
+    write succeeds, ALSO does a full `load_sites(path)` round-trip — if
+    a pre-existing entry was already corrupt, the write that reformatted
+    the file will surface it now. Rolls back the write on validation
+    failure.
+    """
+    data = _load_for_mutation(path)
+    existing_ids: set[str] = {
+        s.get("id") for s in data["sites"] if isinstance(s, dict) and s.get("id")
+    }
+
+    base = slugify(name) if name else slugify(url_to_dirname(url))
+    new_id = dedupe_slug(base, existing_ids)
+
+    # Validate the new entry via Pydantic BEFORE the file is touched.
+    site = Site(id=new_id, name=name, url=url)
+
+    # Backup the original bytes so we can roll back if post-write
+    # validation finds the file is now unloadable.
+    original_bytes = path.read_bytes() if path.exists() else None
+
+    data["sites"].append({"id": new_id, "name": name, "url": url})
+    _atomic_write_yaml(path, data)
+    _verify_or_rollback(path, original_bytes)
+    return site
+
+
+def update_site(
+    path: Path,
+    site_id: str,
+    *,
+    name: str | None = None,
+    url: str | None = None,
+) -> Site:
+    """Mutate `name` and/or `url` on the site with `site_id`.
+
+    `id` is intentionally immutable — changing it would invalidate every
+    existing data dir for that site (per-site dirs are named by id), and
+    the dashboard surfaces this as 404 if the operator tries to PATCH a
+    different id. To "rename" the id, delete + re-create.
+
+    Raises `SiteNotFound` if no site has `site_id`. Raises `ValidationError`
+    if the proposed new values fail the `Site` schema.
+
+    No "no-op fast path" for `name=None, url=None`: the previous version
+    short-circuited via `load_sites` (a heavier full re-validation than
+    the rewrite path it claimed to optimize). The single-pass approach
+    here is faster AND simpler — finds the entry via the in-memory
+    parse from `_load_for_mutation`, returns it as-is without rewriting
+    when nothing actually changed.
+    """
+    data = _load_for_mutation(path)
+    for entry in data["sites"]:
+        if isinstance(entry, dict) and entry.get("id") == site_id:
+            new_name = name if name is not None else entry["name"]
+            new_url = url if url is not None else entry["url"]
+            # Re-validate through the model — catches an empty new url, etc.
+            validated = Site(id=site_id, name=new_name, url=new_url)
+            # Skip the write if nothing actually changed. Cheaper than
+            # rewriting + safer (preserves mtime so file watchers don't
+            # spuriously fire).
+            if entry.get("name") != new_name or entry.get("url") != new_url:
+                entry["name"] = new_name
+                entry["url"] = new_url
+                _atomic_write_yaml(path, data)
+            return validated
+    raise SiteNotFound(f"no site with id={site_id!r}")
+
+
+def delete_site(path: Path, site_id: str) -> None:
+    """Remove the site with `site_id`. Raises `SiteNotFound` if absent.
+
+    The on-disk per-site data dirs (`data/baseline/<date>/<run_id>/<id>/`)
+    are NOT touched. Removing a site from sites.yml just stops future
+    runs from including it; historical artifacts stay so old reports
+    remain readable.
+
+    Rolls back the write if the resulting file fails to load (e.g. a
+    pre-existing entry has invalid id pattern that round-tripping
+    exposed). Round-3 review #M5 caught the asymmetry — `add_site` had
+    rollback but `delete_site` didn't.
+    """
+    data = _load_for_mutation(path)
+    sites = data["sites"]
+    for i, entry in enumerate(sites):
+        if isinstance(entry, dict) and entry.get("id") == site_id:
+            original_bytes = path.read_bytes()
+            del sites[i]
+            _atomic_write_yaml(path, data)
+            _verify_or_rollback(path, original_bytes)
+            return
+    raise SiteNotFound(f"no site with id={site_id!r}")
+
+
 def site_dir_name(site: dict | Site) -> str:
     """Resolve the per-site directory name for `<run_root>/<NAME>/`.
 
@@ -171,4 +416,14 @@ def site_dir_name(site: dict | Site) -> str:
     raise TypeError(f"site_dir_name() requires Site or dict, got {type(site).__name__}")
 
 
-__all__ = ["Site", "slugify", "dedupe_slug", "load_sites", "site_dir_name"]
+__all__ = [
+    "Site",
+    "SiteNotFound",
+    "slugify",
+    "dedupe_slug",
+    "load_sites",
+    "site_dir_name",
+    "add_site",
+    "update_site",
+    "delete_site",
+]

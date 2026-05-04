@@ -1,0 +1,1515 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "AI Frontend Regression Dashboard",
+    "description": "Local-first dashboard for managing UI regression runs. See REFACTOR_AND_DASHBOARD_PLAN.md milestone C for scope.",
+    "version": "0.1.0"
+  },
+  "paths": {
+    "/api/sites": {
+      "get": {
+        "tags": [
+          "sites"
+        ],
+        "summary": "Get Sites",
+        "description": "Read sites from `test_ui/sites.yml`.",
+        "operationId": "get_sites_api_sites_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/SiteOut"
+                  },
+                  "type": "array",
+                  "title": "Response Get Sites Api Sites Get"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "sites"
+        ],
+        "summary": "Post Sites",
+        "description": "Append a new site. The id is auto-generated server-side from the\nslugified name with a `-N` suffix on collision (so id-conflict 409s\nare structurally impossible \u2014 see `add_site`). Atomic write\npreserves operator-authored YAML comments.",
+        "operationId": "post_sites_api_sites_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SiteCreateIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SiteOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Body validation failed"
+          }
+        }
+      }
+    },
+    "/api/sites/{site_id}": {
+      "patch": {
+        "tags": [
+          "sites"
+        ],
+        "summary": "Patch Site",
+        "description": "Mutate name and/or url. id is immutable \u2014 use DELETE + POST to rename.",
+        "operationId": "patch_site_api_sites__site_id__patch",
+        "parameters": [
+          {
+            "name": "site_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Site Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SiteUpdateIn"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SiteOut"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No site with this id"
+          },
+          "422": {
+            "description": "Body validation failed"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "sites"
+        ],
+        "summary": "Delete Site Route",
+        "description": "Remove a site from sites.yml. On-disk per-site data dirs are NOT\ntouched \u2014 historical artifacts remain readable; only future runs stop\nincluding this site.",
+        "operationId": "delete_site_route_api_sites__site_id__delete",
+        "parameters": [
+          {
+            "name": "site_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Site Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "404": {
+            "description": "No site with this id"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/dates": {
+      "get": {
+        "tags": [
+          "runs"
+        ],
+        "summary": "Get Dates",
+        "operationId": "get_dates_api_dates_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DatesOut"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/runs": {
+      "get": {
+        "tags": [
+          "runs"
+        ],
+        "summary": "Get Runs",
+        "description": "List runs, newest first. `total` reflects the filtered set.",
+        "operationId": "get_runs_api_runs_get",
+        "parameters": [
+          {
+            "name": "kind",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by kind",
+              "title": "Kind"
+            },
+            "description": "Filter by kind"
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by status",
+              "title": "Status"
+            },
+            "description": "Filter by status"
+          },
+          {
+            "name": "date_dir",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter to runs whose date_dir matches (DD-MM-YYYY). Lets the Reports page list runs for a single date without client-side truncation.",
+              "title": "Date Dir"
+            },
+            "description": "Filter to runs whose date_dir matches (DD-MM-YYYY). Lets the Reports page list runs for a single date without client-side truncation."
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 500,
+              "minimum": 1,
+              "default": 50,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0,
+              "title": "Offset"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunListOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "runs"
+        ],
+        "summary": "Post Runs",
+        "description": "Spawn a new run as a subprocess. Returns 202 with the assigned ids.",
+        "operationId": "post_runs_api_runs_post",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/BaselineRunRequest"
+                  },
+                  {
+                    "$ref": "#/components/schemas/CurrentRunRequest"
+                  },
+                  {
+                    "$ref": "#/components/schemas/ComparatorRunRequest"
+                  },
+                  {
+                    "$ref": "#/components/schemas/ReportRunRequest"
+                  }
+                ],
+                "discriminator": {
+                  "propertyName": "kind",
+                  "mapping": {
+                    "baseline": "#/components/schemas/BaselineRunRequest",
+                    "current": "#/components/schemas/CurrentRunRequest",
+                    "comparator": "#/components/schemas/ComparatorRunRequest",
+                    "report": "#/components/schemas/ReportRunRequest"
+                  }
+                },
+                "title": "Request"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunSpawnedOut"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflicting in-flight run for the same kind+date"
+          },
+          "412": {
+            "description": "Workflow precondition not met (upstream not complete)"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/runs/{db_id}": {
+      "get": {
+        "tags": [
+          "runs"
+        ],
+        "summary": "Get Run By Id",
+        "operationId": "get_run_by_id_api_runs__db_id__get",
+        "parameters": [
+          {
+            "name": "db_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Db Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunRow"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/sync": {
+      "post": {
+        "tags": [
+          "runs"
+        ],
+        "summary": "Post Sync",
+        "operationId": "post_sync_api_sync_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SyncOut"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/runs/{db_id}/retry": {
+      "post": {
+        "tags": [
+          "runs"
+        ],
+        "summary": "Post Run Retry",
+        "description": "Re-spawn a run with the same args as `db_id`.\n\nReads `args_json` off the original row + reconstructs the matching\n`RunRequest` subclass; from there it's the same path as `POST /api/runs`,\nso 409 / 412 still apply (a retry of an already-running comparison\ncorrectly conflicts).",
+        "operationId": "post_run_retry_api_runs__db_id__retry_post",
+        "parameters": [
+          {
+            "name": "db_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Db Id"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunSpawnedOut"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such db_id"
+          },
+          "409": {
+            "description": "Conflicting in-flight run"
+          },
+          "412": {
+            "description": "Workflow precondition not met"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/runs/{db_id}/logs": {
+      "get": {
+        "tags": [
+          "runs"
+        ],
+        "summary": "Get Run Logs",
+        "description": "Stream the subprocess log file. Always capped at 1 MB even without\n`tail` to prevent runaway responses.\n\nReturns 404 if the row doesn't exist OR if the log file hasn't been\ncreated yet (the spawn opens it lazily \u2014 a row in `pending` for less\nthan a few ms may have no log).",
+        "operationId": "get_run_logs_api_runs__db_id__logs_get",
+        "parameters": [
+          {
+            "name": "db_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Db Id"
+            }
+          },
+          {
+            "name": "tail",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "maximum": 1048576,
+                  "minimum": 1
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Return only the last N bytes of the log (max 1048576).",
+              "title": "Tail"
+            },
+            "description": "Return only the last N bytes of the log (max 1048576)."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              },
+              "text/plain": {}
+            }
+          },
+          "404": {
+            "description": "No row, or no log file yet"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/reports/{date}/{run_id}": {
+      "get": {
+        "tags": [
+          "reports"
+        ],
+        "summary": "Get Report Summary",
+        "description": "Top-level metadata: manifest fields + per-result-type counts.",
+        "operationId": "get_report_summary_api_reports__date___run_id__get",
+        "parameters": [
+          {
+            "name": "date",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Date"
+            }
+          },
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Run Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReportSummaryOut"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Malformed date or run_id"
+          },
+          "404": {
+            "description": "No report for this date+run_id"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/reports/{date}/{run_id}/urls": {
+      "get": {
+        "tags": [
+          "reports"
+        ],
+        "summary": "Get Report Urls",
+        "description": "List of URLs in the report with their result_type + severity.",
+        "operationId": "get_report_urls_api_reports__date___run_id__urls_get",
+        "parameters": [
+          {
+            "name": "date",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Date"
+            }
+          },
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Run Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReportUrlsOut"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Malformed date or run_id"
+          },
+          "404": {
+            "description": "No report for this date+run_id"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/reports/{date}/{run_id}/url": {
+      "get": {
+        "tags": [
+          "reports"
+        ],
+        "summary": "Get Report Url Detail",
+        "description": "Per-URL detail: AI analysis verbatim + structured_data + screenshot\ninventory (the actual bytes come from the SCREENSHOT route).",
+        "operationId": "get_report_url_detail_api_reports__date___run_id__url_get",
+        "parameters": [
+          {
+            "name": "date",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Date"
+            }
+          },
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Run Id"
+            }
+          },
+          {
+            "name": "id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "The url_id (per-site directory name)",
+              "title": "Id"
+            },
+            "description": "The url_id (per-site directory name)"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReportUrlDetail"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Malformed date / run_id / url_id"
+          },
+          "404": {
+            "description": "No such url_id in this report"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/reports/{date}/{run_id}/screenshot": {
+      "get": {
+        "tags": [
+          "reports"
+        ],
+        "summary": "Get Report Screenshot",
+        "description": "Return one PNG (baseline / current / diff) for one URL.\n\nQuery-param typing on `which` is FastAPI-enforced (a different value\nyields 422). `url_id` is validated against the actual on-disk\nchildren, so a bogus value can't traverse OR enumerate.",
+        "operationId": "get_report_screenshot_api_reports__date___run_id__screenshot_get",
+        "parameters": [
+          {
+            "name": "date",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Date"
+            }
+          },
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Run Id"
+            }
+          },
+          {
+            "name": "url_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Url Id"
+            }
+          },
+          {
+            "name": "which",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "enum": [
+                "baseline",
+                "current",
+                "diff"
+              ],
+              "type": "string",
+              "title": "Which"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              },
+              "image/png": {}
+            }
+          },
+          "400": {
+            "description": "Malformed parameters"
+          },
+          "404": {
+            "description": "No such url_id, or no screenshot of that kind"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/health": {
+      "get": {
+        "tags": [
+          "health"
+        ],
+        "summary": "Get Health",
+        "description": "Liveness check. Never raises \u2014 degraded states surface as `False`s.\n\nDoes NOT use `DbDep`: if the DB itself can't be opened (disk full,\npermission denied on the WAL file), the dependency would raise BEFORE\nthe handler runs and FastAPI would 500. We want the failure to\nsurface as `db_ok=False` instead \u2014 that's the entire point of having\na health route.\n\nThe AI analyzer probe is bounded to 2s so a hung analyzer container\ncan't make `/api/health` itself appear hung. The overall `ok` mirrors\n`db_ok` only \u2014 the analyzer being down doesn't invalidate the dashboard\n(it just disables AI-dependent UI affordances client-side).",
+        "operationId": "get_health_api_health_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthOut"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "BaselineRunRequest": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "baseline",
+            "title": "Kind"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "kind"
+        ],
+        "title": "BaselineRunRequest"
+      },
+      "ComparatorRunRequest": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "comparator",
+            "title": "Kind"
+          },
+          "baseline_run_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Baseline Run Id"
+          },
+          "current_run_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current Run Id"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "kind"
+        ],
+        "title": "ComparatorRunRequest"
+      },
+      "CurrentRunRequest": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "current",
+            "title": "Kind"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "kind"
+        ],
+        "title": "CurrentRunRequest"
+      },
+      "DatesOut": {
+        "properties": {
+          "baseline": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Baseline"
+          },
+          "current": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Current"
+          },
+          "comparator": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Comparator"
+          },
+          "report": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Report"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "DatesOut",
+        "description": "Per-kind list of date directories present on disk.\n\nThe frontend uses this to populate date pickers without scanning\nthe filesystem itself. Dates are DD-MM-YYYY strings, sorted descending\n(newest first) so the UI can default to the most recent."
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "type": "array",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "title": "HTTPValidationError"
+      },
+      "HealthOut": {
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "title": "Ok"
+          },
+          "db_ok": {
+            "type": "boolean",
+            "title": "Db Ok"
+          },
+          "ai_analyzer_ok": {
+            "type": "boolean",
+            "title": "Ai Analyzer Ok"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "ok",
+          "db_ok",
+          "ai_analyzer_ok"
+        ],
+        "title": "HealthOut",
+        "description": "Quick liveness probe for the dashboard.\n\n`db_ok` False \u2192 SQLite open or migration failed; the dashboard is\nrunning in a degraded state and most routes will 500.\n`ai_analyzer_ok` is checked with a 2s timeout \u2014 the dashboard never\nhangs on a slow analyzer; a False here just disables AI-dependent\nUI affordances client-side."
+      },
+      "ReportRunRequest": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "report",
+            "title": "Kind"
+          },
+          "date": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Date"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "kind"
+        ],
+        "title": "ReportRunRequest"
+      },
+      "ReportSummaryOut": {
+        "properties": {
+          "date": {
+            "type": "string",
+            "title": "Date"
+          },
+          "run_id": {
+            "type": "string",
+            "title": "Run Id"
+          },
+          "started_at": {
+            "type": "string",
+            "title": "Started At"
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished At"
+          },
+          "url_count": {
+            "type": "integer",
+            "title": "Url Count"
+          },
+          "severity_counts": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "Severity Counts"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "date",
+          "run_id",
+          "started_at",
+          "finished_at",
+          "url_count"
+        ],
+        "title": "ReportSummaryOut",
+        "description": "`GET /api/reports/{date}/{run_id}` \u2014 top-level summary. `run_id`,\n`started_at`, `finished_at`, `url_count` come from the manifest;\n`severity_counts` is computed from the per-URL files."
+      },
+      "ReportUrlDetail": {
+        "properties": {
+          "url_id": {
+            "type": "string",
+            "title": "Url Id"
+          },
+          "result_type": {
+            "type": "string",
+            "enum": [
+              "analysis_success",
+              "analysis_error",
+              "no_changes",
+              "ai_disabled",
+              "unknown"
+            ],
+            "title": "Result Type"
+          },
+          "analysis": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Analysis"
+          },
+          "structured_data": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Structured Data"
+          },
+          "screenshots": {
+            "items": {
+              "type": "string",
+              "enum": [
+                "baseline",
+                "current",
+                "visual_diff"
+              ]
+            },
+            "type": "array",
+            "title": "Screenshots"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "url_id",
+          "result_type",
+          "analysis"
+        ],
+        "title": "ReportUrlDetail",
+        "description": "`GET /api/reports/{date}/{run_id}/url?id=<url_id>` \u2014 the per-URL\nAI analysis JSON, returned verbatim from disk.\n\nTyped as `dict` because the AI analysis schema lives in\n`test_ui/contracts/` and varies by `result_type` \u2014 wiring up a full\ndiscriminated union here would duplicate ~200 LOC of pydantic models\nthat already exist in the contracts package, with the only payoff\nbeing typed access in the React drill-in (which renders it as JSON\nanyway). Acceptable type-loss for the MVP; tighten if the UI needs\ntyped access."
+      },
+      "ReportUrlSummary": {
+        "properties": {
+          "url_id": {
+            "type": "string",
+            "title": "Url Id"
+          },
+          "result_type": {
+            "type": "string",
+            "enum": [
+              "analysis_success",
+              "analysis_error",
+              "no_changes",
+              "ai_disabled",
+              "unknown"
+            ],
+            "title": "Result Type"
+          },
+          "severity": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Severity"
+          },
+          "url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Url"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "url_id",
+          "result_type"
+        ],
+        "title": "ReportUrlSummary",
+        "description": "One row in the `/api/reports/{date}/{run_id}/urls` listing.\n\n`severity` is only populated for `result_type='analysis_success'` \u2014\nthe other result types don't have a meaningful severity. The frontend\ncan surface a colored pill keyed off either `result_type` (always\npresent) or `severity` (success-only)."
+      },
+      "ReportUrlsOut": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ReportUrlSummary"
+            },
+            "type": "array",
+            "title": "Items"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "title": "ReportUrlsOut"
+      },
+      "RunListOut": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/RunRow"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "items",
+          "total"
+        ],
+        "title": "RunListOut",
+        "description": "Paginated list response."
+      },
+      "RunRow": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "run_id": {
+            "type": "string",
+            "title": "Run Id"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "baseline",
+              "current",
+              "comparator",
+              "report"
+            ],
+            "title": "Kind"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "running",
+              "done",
+              "failed",
+              "interrupted"
+            ],
+            "title": "Status"
+          },
+          "created_at": {
+            "type": "string",
+            "title": "Created At"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At"
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished At"
+          },
+          "date_dir": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Date Dir"
+          },
+          "args": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Args"
+          },
+          "command": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Command"
+          },
+          "exit_code": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Exit Code"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "pid": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pid"
+          },
+          "pgid": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pgid"
+          },
+          "pid_start_time": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pid Start Time"
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "dashboard",
+              "discovered",
+              "cli"
+            ],
+            "title": "Source"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "run_id",
+          "kind",
+          "status",
+          "created_at",
+          "source"
+        ],
+        "title": "RunRow",
+        "description": "One row from `runs`, projected for the wire.\n\n`args_json` and `command_json` are exposed as parsed objects (not raw\nstrings) \u2014 saves the frontend a JSON.parse and gives openapi-typescript\na typed shape to work with."
+      },
+      "RunSpawnedOut": {
+        "properties": {
+          "db_id": {
+            "type": "integer",
+            "title": "Db Id"
+          },
+          "run_id": {
+            "type": "string",
+            "title": "Run Id"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "running",
+              "done",
+              "failed",
+              "interrupted"
+            ],
+            "title": "Status"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "db_id",
+          "run_id",
+          "status"
+        ],
+        "title": "RunSpawnedOut",
+        "description": "202 response from `POST /api/runs`. `db_id` lets the frontend poll\n`/api/runs/{db_id}` for status; `run_id` lets it correlate against the\non-disk run dir as soon as the subprocess produces it."
+      },
+      "SiteCreateIn": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Name"
+          },
+          "url": {
+            "type": "string",
+            "maxLength": 2048,
+            "minLength": 1,
+            "title": "Url"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "name",
+          "url"
+        ],
+        "title": "SiteCreateIn",
+        "description": "`POST /api/sites` body. `id` is auto-generated server-side from the\nslugified name + numeric dedup suffix; the client never sets it.\n\n`max_length` caps mirror the underlying `Site` model \u2014 defending at\nthe wire boundary too means a 100KB URL gets rejected with a clear\n422 instead of bloating sites.yml at the persistence layer."
+      },
+      "SiteOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "url": {
+            "type": "string",
+            "title": "Url"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "url"
+        ],
+        "title": "SiteOut",
+        "description": "A site as returned by `GET /api/sites`."
+      },
+      "SiteUpdateIn": {
+        "properties": {
+          "name": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 200,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "url": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 2048,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Url"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "SiteUpdateIn",
+        "description": "`PATCH /api/sites/{id}` body. Both fields optional \u2014 operator can\nrename without changing the URL or vice versa. `id` is immutable\n(changing it would invalidate existing per-site data dirs); the URL\npath component is authoritative."
+      },
+      "SyncOut": {
+        "properties": {
+          "synced": {
+            "type": "integer",
+            "title": "Synced"
+          },
+          "scanned": {
+            "type": "integer",
+            "title": "Scanned"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "synced",
+          "scanned"
+        ],
+        "title": "SyncOut",
+        "description": "`POST /api/sync` result. `synced` is the count of NEW rows inserted.\n\nRe-running sync should be a no-op (returning `synced=0`) once the DB\nhas caught up to the on-disk state \u2014 the test pins this idempotency."
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Location"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Message"
+          },
+          "type": {
+            "type": "string",
+            "title": "Error Type"
+          }
+        },
+        "type": "object",
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError"
+      }
+    }
+  }
+}
