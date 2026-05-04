@@ -47,14 +47,21 @@ TAG_TYPES = (
 )
 
 
-def assess_element_impact(tag: str, change_type: str, count_diff: int) -> str:
+def assess_element_impact(tag: str, count_diff: int) -> str:
     """Heuristic impact rating for an element-count change.
 
-    The change_type parameter is unused today (preserved for API
-    compatibility) — the heuristic is purely tag-class + magnitude.
+    Tag-class + magnitude — no asymmetry between added/removed (the
+    previous `change_type` parameter was unused since this function
+    was extracted; dropped per plan-implementation-flag cleanup).
+
+    `count_diff` is always positive at the call sites (always
+    `abs(current - baseline)`, only invoked when `current != baseline`),
+    so the HIGH_IMPACT branch is unconditional `"high"` — the previous
+    `else "medium"` arm was dead code (would only fire for count_diff=0,
+    which never reaches this function).
     """
     if tag in HIGH_IMPACT_TAGS:
-        return "high" if count_diff > 0 else "medium"
+        return "high"
     if tag in MEDIUM_IMPACT_TAGS:
         return "medium" if count_diff > 2 else "low"
     if tag in LOW_IMPACT_TAGS:
@@ -212,7 +219,7 @@ def extract_element_code_snippets(
                         "code_snippet": clean_html_snippet(elem_str),
                         "description": f"New {tag} element added",
                         "position": f"example_{i + 1}",
-                        "impact": assess_element_impact(tag, change_type, 1),
+                        "impact": assess_element_impact(tag, 1),
                     }
                 )
         elif change_type == "removed":
@@ -225,7 +232,7 @@ def extract_element_code_snippets(
                         "code_snippet": clean_html_snippet(elem_str),
                         "description": f"{tag} element removed",
                         "position": f"example_{i + 1}",
-                        "impact": assess_element_impact(tag, change_type, 1),
+                        "impact": assess_element_impact(tag, 1),
                     }
                 )
         return code_examples
@@ -284,7 +291,7 @@ def compare_dom(baseline_html: Path, current_html: Path) -> dict[str, Any]:
                     "count_change": count_diff,
                     "baseline_count": baseline_count,
                     "current_count": current_count,
-                    "impact": assess_element_impact(tag, change_type, count_diff),
+                    "impact": assess_element_impact(tag, count_diff),
                     "code_examples": code_examples,
                 }
             )

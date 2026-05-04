@@ -201,46 +201,41 @@ def test_create_html_changes_json_emits_title_change_record(tmp_path):
 
 
 @pytest.mark.parametrize(
-    "tag,change_type,count_diff,expected",
+    "tag,count_diff,expected",
     [
-        # HIGH_IMPACT_TAGS — always 'high' (see latent-bug pin below).
-        ("form", "added", 1, "high"),
-        ("button", "removed", 1, "high"),
-        ("input", "added", 5, "high"),
+        # HIGH_IMPACT_TAGS — always 'high', no magnitude threshold.
+        ("form", 1, "high"),
+        ("button", 1, "high"),
+        ("input", 5, "high"),
         # MEDIUM_IMPACT_TAGS: 'medium' if count_diff > 2 else 'low'.
-        ("a", "added", 3, "medium"),
-        ("img", "added", 1, "low"),
-        ("h1", "removed", 2, "low"),
+        ("a", 3, "medium"),
+        ("img", 1, "low"),
+        ("h1", 2, "low"),
         # LOW_IMPACT_TAGS: 'low' if count_diff < 10 else 'medium'.
-        ("div", "added", 5, "low"),
-        ("span", "added", 50, "medium"),
+        ("div", 5, "low"),
+        ("span", 50, "medium"),
         # Tag outside the three classes — always 'low'.
-        ("blockquote", "added", 100, "low"),
+        ("blockquote", 100, "low"),
     ],
 )
-def test_assess_element_impact(tag, change_type, count_diff, expected):
-    assert dom.assess_element_impact(tag, change_type, count_diff) == expected
+def test_assess_element_impact(tag, count_diff, expected):
+    assert dom.assess_element_impact(tag, count_diff) == expected
 
 
-def test_assess_element_impact_high_impact_branch_is_unconditional():
-    """LATENT BUG: the `count_diff > 0 else 'medium'` branch is dead code.
+def test_assess_element_impact_high_impact_is_unconditional():
+    """HIGH_IMPACT_TAGS always rate 'high' — no magnitude threshold.
 
-    `count_diff` is always positive — the only call site (`compare_dom`)
-    passes `abs(current_count - baseline_count)`, which is 0 only if there's
-    no change, in which case `assess_element_impact` isn't called at all. So
-    the high-impact branch always returns 'high' regardless of `change_type`.
-    The function's `change_type` parameter is also unused.
-
-    Pinned so the dead branch can't be silently revived (or removed) without
-    a deliberate decision. Tracked as: "assess_element_impact has unused
-    change_type and a dead 'medium' branch" flag.
+    Pre-cleanup the function had a `count_diff > 0 else 'medium'` ternary
+    in the HIGH_IMPACT branch, but `count_diff` is always positive at the
+    call sites (`abs(current - baseline)`, only invoked when those differ),
+    so the 'medium' arm was dead code. Cleanup dropped it; this test pins
+    the unconditional 'high' so a future maintainer reintroducing
+    asymmetric scoring (e.g. medium-on-remove, high-on-add) makes the
+    decision deliberately rather than slipping it back in.
     """
-    # Same tag + diff, opposite change_types → identical output.
-    assert dom.assess_element_impact("form", "added", 1) == "high"
-    assert dom.assess_element_impact("form", "removed", 1) == "high"
-    # And count_diff=0 still hits the high branch (despite never being called
-    # with 0 in production).
-    assert dom.assess_element_impact("form", "added", 0) == "medium"
+    assert dom.assess_element_impact("form", 1) == "high"
+    assert dom.assess_element_impact("form", 99) == "high"
+    assert dom.assess_element_impact("button", 1) == "high"
 
 
 # ---------------------------------------------------------------------------

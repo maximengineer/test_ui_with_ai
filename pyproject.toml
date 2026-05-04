@@ -1,42 +1,68 @@
-[tool.poetry]
+# PEP 621-style packaging metadata. Migrated from `[tool.poetry.*]` ahead
+# of Poetry 2.x's deprecation of name/version/description/authors/scripts
+# under that table. `[tool.poetry]` is now empty; `[project]` is the
+# canonical location and is what `pip install` (sans Poetry) reads too.
+#
+# Dependency declarations stay split: runtime in `[project.dependencies]`,
+# dev-only in `[tool.poetry.group.dev.dependencies]` (PEP 735's
+# `[dependency-groups]` is the future, but Poetry 2.x already understands
+# the `tool.poetry.group` syntax and the dev workflow is Poetry-only).
+
+[project]
 name = "ai-frontend-regression-tester"
 version = "1.0.0"
 description = "AI-assisted UI regression analysis tool. See REFACTOR_AND_DASHBOARD_PLAN.md for current status."
-authors = ["Your Team <you@example.com>"]
+authors = [{name = "Your Team", email = "you@example.com"}]
+requires-python = ">=3.13,<4.0"
+dependencies = [
+    "aiofiles>=25.1.0,<26.0.0",
+    "aiohttp>=3.13.5,<4.0.0",
+    "beautifulsoup4>=4.14.3,<5.0.0",
+    "click>=8.3.3,<9.0.0",
+    "crawl4ai>=0.8.6,<0.9.0",
+    "httpx>=0.28.1,<0.29.0",
+    # jinja2 is imported directly by report/generator.py for HTML templating.
+    # It was previously a transitive dep; declaring it explicitly avoids
+    # silent breakage if upstream packages drop it.
+    "jinja2>=3.1.6,<4.0.0",
+    "loguru>=0.7.3,<0.8.0",
+    # Pinned to 5.x: crawl4ai 0.8.6's transitive deps (patchright, etc.)
+    # require lxml < 6. Bumping is upstream-blocked.
+    "lxml>=5.4.0,<6.0.0",
+    # Pinned exactly: golden tests in Phase A.2 are sensitive to visual-diff
+    # lib version. Refresh these pins if you regenerate goldens.
+    "opencv-python-headless==4.13.0.92",
+    "pillow>=12.2.0,<13.0.0",
+    # playwright is imported directly by crawler/engine.py. Was transitive
+    # via crawl4ai; declaring explicitly is safer.
+    "playwright>=1.59.0,<2.0.0",
+    "pydantic>=2.13.3,<3.0.0",
+    "pydantic-settings>=2.14.0,<3.0.0",
+    "pytz>=2026.1",
+    "pyyaml>=6.0.3,<7.0.0",
+    # rich is imported directly by cli.py for console output. Transitive
+    # via click today, but click could drop it on a major version bump.
+    "rich>=15.0.0,<16.0.0",
+    "scikit-image==0.26.0",
+    "python-ulid>=3.1.0,<4.0.0",
+    "ruamel-yaml>=0.19.1,<0.20.0",
+    # Dashboard (Milestone C). FastAPI for the API layer, uvicorn for
+    # serving. stdlib `sqlite3` is used for the runs DB (WAL mode,
+    # per-request connection) rather than aiosqlite — FastAPI runs sync
+    # routes in a threadpool, and the dashboard is single-machine local-
+    # first, so the simpler sync API wins.
+    "fastapi>=0.121.0,<0.122.0",
+    "uvicorn[standard]>=0.46.0,<0.47.0",
+]
 
-[tool.poetry.dependencies]
-python = "^3.13"
-aiofiles = "^25.1.0"
-aiohttp = "^3.13.5"
-beautifulsoup4 = "^4.14.3"
-click = "^8.3.3"
-crawl4ai = "^0.8.6"
-httpx = "^0.28.1"
-# jinja2 is imported directly by report/generator.py for HTML templating.
-# It was previously a transitive dep; declaring it explicitly avoids
-# silent breakage if upstream packages drop it.
-jinja2 = "^3.1.6"
-loguru = "^0.7.3"
-# Pinned to 5.x: crawl4ai 0.8.6's transitive deps (patchright, etc.) require
-# lxml < 6. Bumping to 6.x is blocked until upstream relaxes that constraint.
-lxml = "^5.4.0"
-# Pinned exactly: golden tests in Phase A.2 are sensitive to visual-diff lib version.
-# Refresh these pins if you regenerate goldens (`pytest --update-golden`).
-opencv-python-headless = "==4.13.0.92"
-pillow = "^12.2.0"
-# playwright is imported directly by crawler/engine.py. It was previously
-# pulled in transitively via crawl4ai; declaring explicitly is safer.
-playwright = "^1.59.0"
-pydantic = "^2.13.3"
-pydantic-settings = "^2.14.0"
-pytz = "^2026.1"
-pyyaml = "^6.0.3"
-# rich is imported directly by cli.py for console output. Transitive via click
-# today, but click could drop it on a major version bump.
-rich = "^15.0.0"
-scikit-image = "==0.26.0"
-python-ulid = "^3.1.0"
-ruamel-yaml = "^0.19.1"
+[project.scripts]
+afr = "test_ui.cli:cli"
+
+# `[tool.poetry]` deliberately empty — Poetry 2.x reads name/version/etc.
+# from `[project]`. Kept as an explicit marker so a future contributor
+# doesn't try to re-add deprecated keys here.
+[tool.poetry]
+package-mode = true
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^9.0.3"
@@ -44,9 +70,6 @@ pytest-asyncio = "^1.3.0"
 pytest-cov = "^7.1.0"
 respx = "^0.23.1"
 ruff = "^0.15.12"
-
-[tool.poetry.scripts]
-afr = "test_ui.cli:cli"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
