@@ -2,7 +2,7 @@
 
 Split out of `cli.py` in the post-B.3 cleanup so the Orchestrator class
 has its own module. This file is a thin shell around the Orchestrator's
-methods — each command opens an httpx client, instantiates the
+methods - each command opens an httpx client, instantiates the
 Orchestrator via `_open_orchestrator`, and dispatches.
 """
 
@@ -30,7 +30,7 @@ async def _open_orchestrator():
 
     Single canonical place that owns the AI-analyzer client lifecycle.
     All 5 Click commands use this so the client is guaranteed to close
-    cleanly even on exceptions. Phase A.1.7 — replaces the leaked client
+    cleanly even on exceptions. Phase A.1.7 - replaces the leaked client
     that ReportGenerator used to construct internally.
     """
     async with httpx.AsyncClient(timeout=settings.ai_analyzer_timeout) as client:
@@ -80,7 +80,7 @@ def cli(ctx, sites_file):
 _RUN_ID_HELP = (
     "Pre-allocated ULID to use as this run's identifier. Intended for the "
     "dashboard to spawn subprocesses it can then track by ID. CLI users "
-    "should omit this flag — the engine generates a fresh ULID."
+    "should omit this flag - the engine generates a fresh ULID."
 )
 
 
@@ -201,7 +201,7 @@ def compare(ctx, baseline, current, output, run_id):
 
     # If no output directory is specified, use a dummy path since comparator creates its own structure
     if output is None:
-        output = settings.report_dir  # Dummy — comparator builds its own per-URL paths
+        output = settings.report_dir  # Dummy - comparator builds its own per-URL paths
 
     async def _run():
         async with _open_orchestrator() as orchestrator:
@@ -242,7 +242,7 @@ def compare(ctx, baseline, current, output, run_id):
 def enhanced_report(ctx, comparator_data, date, run_id):
     """Generate enhanced AI-powered HTML report; published under data/report/<date>/<run_id>/.
 
-    Phase B.1 dropped the `--output` flag — the report has always written to
+    Phase B.1 dropped the `--output` flag - the report has always written to
     `settings.report_dir` regardless of what was passed for `--output`. Override
     the destination via `AFR_REPORT_DIR=...` if you need to redirect.
     """
@@ -305,7 +305,7 @@ def enhanced_report(ctx, comparator_data, date, run_id):
 
     except PreconditionFailed as e:
         # Precondition failures (no complete comparator run, etc.) get the
-        # same friendly format as the other commands — without the
+        # same friendly format as the other commands - without the
         # misleading "Enhanced report generation failed:" prefix that the
         # generic Exception branch below would add.
         console.print(f"[red]❌ {e}[/red]")
@@ -320,7 +320,7 @@ def enhanced_report(ctx, comparator_data, date, run_id):
         raise click.Abort() from e
 
 
-# `retry-url` lives in `cli/retry.py` — import it via cli/__init__.py so
+# `retry-url` lives in `cli/retry.py` - import it via cli/__init__.py so
 # Click registration happens at package-load time. Kept out of this file
 # because (a) it's ~150 LOC of distinct shape, (b) commands.py was already
 # at the 400-LOC ceiling, and (c) the HTML report deep-links to it so it

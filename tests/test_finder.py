@@ -50,7 +50,7 @@ def _make_run(
 
 
 # ---------------------------------------------------------------------------
-# is_valid_date_dir / parse_date_dir — unchanged from A.3
+# is_valid_date_dir / parse_date_dir - unchanged from A.3
 # ---------------------------------------------------------------------------
 
 
@@ -73,7 +73,7 @@ def test_is_valid_date_dir(name, expected):
 
 
 # ---------------------------------------------------------------------------
-# find_latest_date_dir — unchanged from A.3, just sanity-check we didn't break
+# find_latest_date_dir - unchanged from A.3, just sanity-check we didn't break
 # ---------------------------------------------------------------------------
 
 
@@ -96,7 +96,7 @@ def test_find_latest_date_dir_ignores_non_date_dirs(tmp_path):
 
 
 # ---------------------------------------------------------------------------
-# find_latest_run_dir_in_date — new B.1 behavior
+# find_latest_run_dir_in_date - new B.1 behavior
 # ---------------------------------------------------------------------------
 
 
@@ -167,7 +167,7 @@ def test_legacy_fallback_when_no_run_id_subdirs(tmp_path):
 
 def test_legacy_fallback_skipped_if_any_run_id_present(tmp_path):
     """Mixed layout (legacy url_dir + new run_id) should NOT silently fall back.
-    If any run_id is present, treat it as new layout — legacy entries are
+    If any run_id is present, treat it as new layout - legacy entries are
     leftover and should be ignored, not promoted."""
     date_dir = tmp_path / "01-01-2099"
     date_dir.mkdir()
@@ -187,7 +187,7 @@ def test_legacy_fallback_skipped_if_any_run_id_present(tmp_path):
 def test_latest_symlink_takes_precedence_over_scan(tmp_path):
     """If `latest` resolves to a real dir, return it without scanning ULIDs.
 
-    Important because the symlink is the writer's stated truth — even if a
+    Important because the symlink is the writer's stated truth - even if a
     scan would pick a different (e.g. lexicographically-later) ULID, we
     trust the symlink.
     """
@@ -199,7 +199,7 @@ def test_latest_symlink_takes_precedence_over_scan(tmp_path):
     _make_run(date_dir, older_id, status="complete")
     _make_run(date_dir, newer_id, status="complete")
 
-    # Symlink to older — finder should respect it over the newer ULID.
+    # Symlink to older - finder should respect it over the newer ULID.
     finder.update_latest_symlink(date_dir, older_id)
 
     result = finder.find_latest_run_dir_in_date(date_dir)
@@ -207,7 +207,7 @@ def test_latest_symlink_takes_precedence_over_scan(tmp_path):
 
 
 def test_dangling_symlink_falls_through_to_scan(tmp_path):
-    """A symlink pointing nowhere must NOT crash — fall back to scanning."""
+    """A symlink pointing nowhere must NOT crash - fall back to scanning."""
     date_dir = tmp_path / "01-01-2099"
     date_dir.mkdir()
     run_id = new_run_id()
@@ -244,7 +244,7 @@ def test_update_latest_symlink_overwrites_atomically(tmp_path):
 
 
 def test_update_latest_symlink_refuses_nonexistent_target(tmp_path):
-    """If the requested run_id dir doesn't exist, refuse — never create a
+    """If the requested run_id dir doesn't exist, refuse - never create a
     dangling symlink during normal operation."""
     date_dir = tmp_path / "01-01-2099"
     date_dir.mkdir()
@@ -278,7 +278,7 @@ def test_find_latest_run_dir_drills_through_latest_date(tmp_path):
 
     # Older date has a complete run.
     _make_run(older_date, new_run_id(), status="complete")
-    # Newer date has a complete run too — this should win.
+    # Newer date has a complete run too - this should win.
     expected = new_run_id()
     _make_run(newer_date, expected, status="complete")
 
@@ -288,7 +288,7 @@ def test_find_latest_run_dir_drills_through_latest_date(tmp_path):
 
 
 def test_find_latest_run_dir_legacy_only_root(tmp_path):
-    """No new-layout runs anywhere — legacy fallback returns the date dir itself."""
+    """No new-layout runs anywhere - legacy fallback returns the date dir itself."""
     date_dir = tmp_path / "01-01-2099"
     date_dir.mkdir()
     (date_dir / "example.com").mkdir()  # url_dir, not a run_id

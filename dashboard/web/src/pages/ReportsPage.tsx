@@ -270,7 +270,7 @@ function UrlDetail({
         ? reportScreenshotUrl(date, runId, urlId, 'current')
         : null,
       // The on-disk kind is `visual_diff`; the wire `which=` enum is
-      // `diff` — `reportScreenshotUrl` maps to the right query string.
+      // `diff` - `reportScreenshotUrl` maps to the right query string.
       diff: present.has('visual_diff')
         ? reportScreenshotUrl(date, runId, urlId, 'diff')
         : null,

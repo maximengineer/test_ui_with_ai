@@ -29,7 +29,7 @@ def url_to_dirname(url: str) -> str:
 
     Strips `www.` prefix from the host. Replaces path slashes with underscores.
     Drops the trailing slash. Does not handle ports, query strings, or
-    fragments — historical behavior we preserve to keep golden snapshots stable.
+    fragments - historical behavior we preserve to keep golden snapshots stable.
     """
     parsed = urlparse(url)
     domain = parsed.netloc.replace("www.", "")

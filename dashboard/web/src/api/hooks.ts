@@ -4,7 +4,7 @@
  * Convention: one hook per route. Each hook does its own argument
  * normalization and queryKey shape so callers don't have to remember
  * key conventions. The backend's wire shapes are imported from the
- * generated schema (`components['schemas'][...]`) — no hand-rolled types.
+ * generated schema (`components['schemas'][...]`) - no hand-rolled types.
  */
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
@@ -26,7 +26,7 @@ export type ReportUrlsOut = components['schemas']['ReportUrlsOut']
 export type ReportUrlSummary = components['schemas']['ReportUrlSummary']
 export type ReportUrlDetail = components['schemas']['ReportUrlDetail']
 
-// Hand-defined for the same reason as RunKind / RunStatus above —
+// Hand-defined for the same reason as RunKind / RunStatus above -
 // FastAPI inlines Literals rather than emitting them as named schemas.
 // Kept in lock-step with `dashboard/api/models.py:ReportResultType`.
 export type ReportResultType =
@@ -38,7 +38,7 @@ export type ReportResultType =
 
 // FastAPI inlines Literal[...] enums rather than emitting them as named
 // component schemas, so openapi-typescript can't expose them by name.
-// Define them by hand here — kept in lock-step with the Python tuples in
+// Define them by hand here - kept in lock-step with the Python tuples in
 // `dashboard/api/db.py` (RUN_KINDS_TUPLE, RUN_STATUSES_TUPLE). The
 // `RunRow.kind` / `.status` fields ARE the same union string literally,
 // so a desync would surface as a TS narrowing failure at the call site.
@@ -51,7 +51,7 @@ export type RunStatus =
   | 'interrupted'
 
 // ---------------------------------------------------------------------------
-// /api/health — polled by the Header so the operator sees DB / analyzer
+// /api/health - polled by the Header so the operator sees DB / analyzer
 //               state at a glance. 5s interval is enough for a dashboard
 //               this size; tighter polling would just create log noise.
 // ---------------------------------------------------------------------------
@@ -69,7 +69,7 @@ export function useHealth() {
 }
 
 // ---------------------------------------------------------------------------
-// /api/sites — list of configured sites. Read-only this slice; CRUD lands
+// /api/sites - list of configured sites. Read-only this slice; CRUD lands
 //              in the Sites slice with the matching backend additions.
 // ---------------------------------------------------------------------------
 
@@ -85,7 +85,7 @@ export function useSites() {
 }
 
 // ---------------------------------------------------------------------------
-// Sites CRUD — POST / PATCH / DELETE.
+// Sites CRUD - POST / PATCH / DELETE.
 // ---------------------------------------------------------------------------
 
 export function useCreateSite() {
@@ -208,7 +208,7 @@ export function reportScreenshotUrl(
 
 /**
  * List report runs for a specific date. Uses the backend's `date_dir`
- * query param so the response is already scoped — no client-side
+ * query param so the response is already scoped - no client-side
  * filter, no 500-row truncation. (Round-2 review CRITICAL #1.)
  */
 export function useReportRuns(date: string | null) {
@@ -246,7 +246,7 @@ export function useDeleteSite() {
 }
 
 // ---------------------------------------------------------------------------
-// /api/dates — date dirs present on disk per kind. The Reports page uses
+// /api/dates - date dirs present on disk per kind. The Reports page uses
 //              this to populate its date picker.
 // ---------------------------------------------------------------------------
 
@@ -262,7 +262,7 @@ export function useDates() {
 }
 
 // ---------------------------------------------------------------------------
-// /api/runs — paginated list. `kind` and `status` are optional filters;
+// /api/runs - paginated list. `kind` and `status` are optional filters;
 //              the queryKey includes them so each filter combination has
 //              its own cache entry.
 // ---------------------------------------------------------------------------
@@ -291,7 +291,7 @@ export function useRuns(params: RunsListParams = {}) {
 }
 
 // ---------------------------------------------------------------------------
-// /api/runs/{db_id} — single run detail. Polls every 2s while the run is
+// /api/runs/{db_id} - single run detail. Polls every 2s while the run is
 //                     still in flight (matches the plan's 2s cadence);
 //                     stops polling once it lands at a terminal status.
 // ---------------------------------------------------------------------------
@@ -323,7 +323,7 @@ export function useRun(dbId: number | null) {
 }
 
 // ---------------------------------------------------------------------------
-// /api/runs/{db_id}/logs — text response, NOT JSON. The query returns the
+// /api/runs/{db_id}/logs - text response, NOT JSON. The query returns the
 //                          raw string so the UI can render it in a <pre>.
 // ---------------------------------------------------------------------------
 
@@ -350,7 +350,7 @@ export function useRunLogs(
       }
       return resp.text()
     },
-    // Stop polling once the run is terminal — the log file is closed
+    // Stop polling once the run is terminal - the log file is closed
     // and immutable, so further polls are pure waste. Mirrors useRun's
     // terminal-status check. (Round-2 review caught the indefinite poll.)
     refetchInterval: status && TERMINAL_STATUSES.has(status) ? false : 3000,
@@ -358,7 +358,7 @@ export function useRunLogs(
 }
 
 // ---------------------------------------------------------------------------
-// POST /api/runs — spawn a new run. Uses TanStack's useMutation so the
+// POST /api/runs - spawn a new run. Uses TanStack's useMutation so the
 //                  caller can show pending / error state without writing
 //                  state machinery by hand.
 // ---------------------------------------------------------------------------
@@ -385,7 +385,7 @@ export function useSpawnRun() {
       // shape; no runtime cast needed.
       //
       // The default branch's `_exhaustive: never` is the standard TS
-      // exhaustiveness check — if a 5th `RunKind` is added without a
+      // exhaustiveness check - if a 5th `RunKind` is added without a
       // case here, this line becomes a TYPE ERROR (because the new
       // kind narrows to a non-never type at this point). Round-3 #M3
       // caught the silent-fall-through risk.
@@ -429,7 +429,7 @@ export function useSpawnRun() {
       // New row landed; refresh the runs list so the operator sees it.
       qc.invalidateQueries({ queryKey: ['runs'] })
       qc.invalidateQueries({ queryKey: ['dates'] })
-      // Spawning a `report` produces a new report drill-in target —
+      // Spawning a `report` produces a new report drill-in target -
       // invalidate the per-report cache so the Reports page picks it up
       // without a manual page refresh. Round-2 review caught this.
       if (input.kind === 'report') {
@@ -440,7 +440,7 @@ export function useSpawnRun() {
 }
 
 // ---------------------------------------------------------------------------
-// POST /api/runs/{db_id}/retry — re-spawn with the same args. Same pattern
+// POST /api/runs/{db_id}/retry - re-spawn with the same args. Same pattern
 //                                as useSpawnRun.
 // ---------------------------------------------------------------------------
 

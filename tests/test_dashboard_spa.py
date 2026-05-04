@@ -104,7 +104,7 @@ def test_api_health_NOT_intercepted_by_spa_catchall(spa_client):
 def test_unknown_api_path_returns_404_not_spa_shell(spa_client):
     """Defense-in-depth: even if a request slips past the API routes
     (unmatched path under /api/), the catch-all explicitly returns 404
-    rather than the SPA shell — otherwise the React app would try to
+    rather than the SPA shell - otherwise the React app would try to
     render a route from what the client thought was an API call."""
     r = spa_client.get("/api/nonexistent-route")
     assert r.status_code == 404
@@ -112,7 +112,7 @@ def test_unknown_api_path_returns_404_not_spa_shell(spa_client):
 
 
 def test_root_api_path_returns_404_not_spa_shell(spa_client):
-    """The literal path `/api` (no trailing slash) is also rejected —
+    """The literal path `/api` (no trailing slash) is also rejected -
     not strictly an API call but unambiguously not a real SPA route."""
     r = spa_client.get("/api")
     assert r.status_code == 404
@@ -125,7 +125,7 @@ def test_root_api_path_returns_404_not_spa_shell(spa_client):
 
 def test_mount_spa_is_noop_when_dist_missing(tmp_path, monkeypatch):
     """No build → SPA serving silently disabled. Operator gets the API
-    only, no module-import failure. Pytest depends on this — the test
+    only, no module-import failure. Pytest depends on this - the test
     pipeline never runs `npm build`."""
     monkeypatch.setattr("dashboard.api.spa._spa_dist_dir", lambda: tmp_path / "no-such")
     app = create_app(dev_mode=False)
@@ -135,21 +135,21 @@ def test_mount_spa_is_noop_when_dist_missing(tmp_path, monkeypatch):
     r = client.get("/openapi.json")
     assert r.status_code == 200
 
-    # No SPA shell — `/` gets the FastAPI default (which is a 404 since
+    # No SPA shell - `/` gets the FastAPI default (which is a 404 since
     # we don't define a `/` route ourselves).
     r = client.get("/")
     assert r.status_code == 404
 
 
 def test_mount_spa_raises_on_half_built_dist(tmp_path):
-    """`dist/` exists but `index.html` is missing — likely an interrupted
+    """`dist/` exists but `index.html` is missing - likely an interrupted
     build. Better to fail loud at startup than half-mount and serve
     confusing 404s for every SPA route."""
     half = tmp_path / "half-dist"
     (half / "assets").mkdir(parents=True)
     # Deliberately do NOT create index.html.
     app = create_app(dev_mode=False)
-    # mount_spa called explicitly — bypasses the create_app's silent
+    # mount_spa called explicitly - bypasses the create_app's silent
     # mount so we can observe the raise.
     import dashboard.api.spa as spa_module
 

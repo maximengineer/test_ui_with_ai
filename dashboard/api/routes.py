@@ -9,9 +9,9 @@ Conventions:
     into per-resource files is mechanical (no import-cycle work).
   - DB connections come from a FastAPI dependency for the read paths, but
     the job-runner routes (which need to interleave async subprocess
-    spawning with sync DB writes) open their own short-lived scopes —
+    spawning with sync DB writes) open their own short-lived scopes -
     safer than holding a Connection across `await` boundaries.
-  - Response models on every route — documents what we return AND lets
+  - Response models on every route - documents what we return AND lets
     FastAPI strip extra fields from the row dict before serialization.
 """
 
@@ -89,7 +89,7 @@ def get_db() -> sqlite3.Connection:
         # rather than letting `connection_scope(None)` raise a TypeError.
         # (Plain `assert` would be stripped under `python -O`.)
         raise RuntimeError(
-            "settings.runs_db_path is None — Settings._fill_path_defaults "
+            "settings.runs_db_path is None - Settings._fill_path_defaults "
             "did not run, or was overridden after construction."
         )
     with connection_scope(settings.runs_db_path) as conn:
@@ -100,7 +100,7 @@ DbDep = Annotated[sqlite3.Connection, Depends(get_db)]
 
 
 # --------------------------------------------------------------------------- #
-# Helpers — row → wire model conversion.                                     #
+# Helpers - row → wire model conversion.                                     #
 # --------------------------------------------------------------------------- #
 
 
@@ -109,7 +109,7 @@ def _row_to_runrow(row: sqlite3.Row) -> RunRow:
 
     Parses `args_json` / `command_json` here so route handlers don't repeat
     it. Defensive: if a row's JSON is unparseable, log and substitute
-    empty values rather than 500ing — a corrupt args field shouldn't
+    empty values rather than 500ing - a corrupt args field shouldn't
     take down the runs list.
     """
     try:
@@ -152,7 +152,7 @@ sites_router = APIRouter(prefix="/api/sites", tags=["sites"])
 
 
 # sites.yml is mounted into the container at the same path as the bundled
-# test_ui/sites.yml — see docker-compose.yml's `dashboard` service.
+# test_ui/sites.yml - see docker-compose.yml's `dashboard` service.
 #
 # Round-2 added an import-time `.exists()` check intended to fail loud on
 # zipped-wheel deployments (where `as_file` extracts to a tempfile that
@@ -163,11 +163,11 @@ sites_router = APIRouter(prefix="/api/sites", tags=["sites"])
 # Resolution: drop the import-time check entirely. The per-route
 # behavior is correct on its own:
 #   - GET: empty list when the file is absent (operator hasn't
-#     configured any sites yet — legitimate state on a fresh install)
+#     configured any sites yet - legitimate state on a fresh install)
 #   - POST: `_atomic_write_yaml` creates the file
 #   - PATCH/DELETE: 404 when the id can't be found
 #
-# Zipped-wheel detection is left as a deployment concern — see TODO in
+# Zipped-wheel detection is left as a deployment concern - see TODO in
 # `_sites_path` for the cache-extraction approach to add when packaging
 # matters. Today we only ship as an editable install, so the issue is
 # theoretical.
@@ -211,7 +211,7 @@ def get_sites() -> list[SiteOut]:
 def post_sites(payload: SiteCreateIn) -> SiteOut:
     """Append a new site. The id is auto-generated server-side from the
     slugified name with a `-N` suffix on collision (so id-conflict 409s
-    are structurally impossible — see `add_site`). Atomic write
+    are structurally impossible - see `add_site`). Atomic write
     preserves operator-authored YAML comments.
     """
     sites_path = _sites_path()
@@ -228,7 +228,7 @@ def post_sites(payload: SiteCreateIn) -> SiteOut:
     },
 )
 def patch_site(site_id: str, payload: SiteUpdateIn) -> SiteOut:
-    """Mutate name and/or url. id is immutable — use DELETE + POST to rename."""
+    """Mutate name and/or url. id is immutable - use DELETE + POST to rename."""
     sites_path = _sites_path()
     try:
         site = update_site(sites_path, site_id, name=payload.name, url=payload.url)
@@ -244,7 +244,7 @@ def patch_site(site_id: str, payload: SiteUpdateIn) -> SiteOut:
 )
 def delete_site_route(site_id: str) -> Response:
     """Remove a site from sites.yml. On-disk per-site data dirs are NOT
-    touched — historical artifacts remain readable; only future runs stop
+    touched - historical artifacts remain readable; only future runs stop
     including this site."""
     sites_path = _sites_path()
     try:
@@ -303,7 +303,7 @@ def _list_date_dirs(root: Path | None) -> list[str]:
         if p.is_dir() and not p.name.startswith(".") and _is_valid_date_dir(p.name)
     ]
 
-    # DD-MM-YYYY isn't lexically sortable — convert to YYYY-MM-DD for sort.
+    # DD-MM-YYYY isn't lexically sortable - convert to YYYY-MM-DD for sort.
     # `_is_valid_date_dir` guarantees split() yields exactly 3 elements
     # corresponding to a real date, so no try/except needed here.
     def _key(s: str) -> str:
@@ -357,7 +357,7 @@ def get_run_by_id(db_id: int, conn: DbDep) -> RunRow:
 
 
 # --------------------------------------------------------------------------- #
-# /api/sync — manual re-sync (also runs at startup).                         #
+# /api/sync - manual re-sync (also runs at startup).                         #
 # --------------------------------------------------------------------------- #
 
 
@@ -400,7 +400,7 @@ def _check_workflow_preconditions(req: RunRequest, *, date: str) -> None:
         require_complete_run(settings.current_dir, date, kind_label="current")
     elif isinstance(req, ReportRunRequest):
         require_complete_run(settings.comparator_dir, date, kind_label="comparator")
-    # baseline / current — no precondition.
+    # baseline / current - no precondition.
 
 
 def _resolve_date_for_request(req: RunRequest) -> str:
@@ -408,7 +408,7 @@ def _resolve_date_for_request(req: RunRequest) -> str:
 
     For now the rule is dead-simple: today's date in the configured timezone.
     The plan reserves request-body `date` overrides for retry/replay flows
-    that aren't in the MVP — when those land, this function is the single
+    that aren't in the MVP - when those land, this function is the single
     place to thread the override through.
     """
     # ReportRunRequest has an optional `date`; honor it so an operator can
@@ -437,7 +437,7 @@ async def _spawn_run_for_request(request: RunRequest) -> RunSpawnedOut:
       7. Return 202.
     """
     if settings.runs_db_path is None:
-        raise RuntimeError("settings.runs_db_path is None — Settings init failed")
+        raise RuntimeError("settings.runs_db_path is None - Settings init failed")
     db_path = settings.runs_db_path
 
     date = _resolve_date_for_request(request)
@@ -479,7 +479,7 @@ async def _spawn_run_for_request(request: RunRequest) -> RunSpawnedOut:
         )
     # We INSERT with an empty command_json and let the spawn build the
     # actual argv. Pinning the argv into the row at insert time would
-    # require computing it in two places — accepting the small wire-vs-DB
+    # require computing it in two places - accepting the small wire-vs-DB
     # lag instead (the row's `command` is empty until the watcher fires).
 
     log_path = settings.runs_log_dir / f"{db_id}.log"
@@ -550,7 +550,7 @@ async def post_run_retry(db_id: int) -> RunSpawnedOut:
     correctly conflicts).
     """
     if settings.runs_db_path is None:
-        raise RuntimeError("settings.runs_db_path is None — Settings init failed")
+        raise RuntimeError("settings.runs_db_path is None - Settings init failed")
     db_path = settings.runs_db_path
 
     with connection_scope(db_path) as conn:
@@ -567,7 +567,7 @@ async def post_run_retry(db_id: int) -> RunSpawnedOut:
         ) from e
 
     # Reconstruct the typed request from `args` + the row's kind. The kind
-    # in the row is authoritative — args may be missing it (older rows
+    # in the row is authoritative - args may be missing it (older rows
     # discovered from manifests have empty args).
     args = {**args, "kind": row["kind"]}
     request = _request_from_dict(args)
@@ -626,11 +626,11 @@ def get_run_logs(
     `tail` to prevent runaway responses.
 
     Returns 404 if the row doesn't exist OR if the log file hasn't been
-    created yet (the spawn opens it lazily — a row in `pending` for less
+    created yet (the spawn opens it lazily - a row in `pending` for less
     than a few ms may have no log).
     """
     if settings.runs_db_path is None:
-        raise RuntimeError("settings.runs_db_path is None — Settings init failed")
+        raise RuntimeError("settings.runs_db_path is None - Settings init failed")
     with connection_scope(settings.runs_db_path) as conn:
         row = get_run(conn, db_id)
     if row is None:
@@ -670,17 +670,17 @@ health_router = APIRouter(prefix="/api", tags=["health"])
 
 @health_router.get("/health", response_model=HealthOut)
 def get_health() -> HealthOut:
-    """Liveness check. Never raises — degraded states surface as `False`s.
+    """Liveness check. Never raises - degraded states surface as `False`s.
 
     Does NOT use `DbDep`: if the DB itself can't be opened (disk full,
     permission denied on the WAL file), the dependency would raise BEFORE
     the handler runs and FastAPI would 500. We want the failure to
-    surface as `db_ok=False` instead — that's the entire point of having
+    surface as `db_ok=False` instead - that's the entire point of having
     a health route.
 
     The AI analyzer probe is bounded to 2s so a hung analyzer container
     can't make `/api/health` itself appear hung. The overall `ok` mirrors
-    `db_ok` only — the analyzer being down doesn't invalidate the dashboard
+    `db_ok` only - the analyzer being down doesn't invalidate the dashboard
     (it just disables AI-dependent UI affordances client-side).
     """
     db_ok = False
@@ -698,7 +698,7 @@ def get_health() -> HealthOut:
             resp = client.get(f"{settings.ai_analyzer_service_url}/health")
             ai_ok = resp.status_code == 200
     except Exception:
-        # Network error, DNS failure, timeout — all map to "analyzer not
+        # Network error, DNS failure, timeout - all map to "analyzer not
         # reachable from the dashboard right now". Not logged at WARN
         # because /api/health gets polled.
         ai_ok = False
@@ -715,7 +715,7 @@ def get_health() -> HealthOut:
 #   1. `date` parameter validated as DD-MM-YYYY via `_is_valid_date_dir`.
 #   2. `run_id` parameter validated as a real ULID via `is_valid_run_id`.
 #   3. `url_id` (where applicable) validated against the actual on-disk
-#      directory listing — we don't trust the client to pick a real id.
+#      directory listing - we don't trust the client to pick a real id.
 #   4. Resolved paths are confined to `settings.report_dir.resolve()` via
 #      `is_relative_to` as a final defense (catches symlink escapes too).
 # Any layer failing yields 400 (malformed) or 404 (missing); never a 500.
@@ -725,7 +725,7 @@ reports_router = APIRouter(prefix="/api/reports", tags=["reports"])
 
 
 # Mutually-exclusive per-URL result files. Mirrors
-# `test_ui.report.loader.RESULT_FILENAMES` in priority order — the first
+# `test_ui.report.loader.RESULT_FILENAMES` in priority order - the first
 # present file wins. Centralized here so the routes don't import from
 # the loader (which would pull in the AI client + jinja deps).
 _RESULT_FILES: tuple[tuple[str, str], ...] = (
@@ -764,7 +764,7 @@ def _resolve_report_run_dir(date: str, run_id: str) -> Path:
 def _resolve_url_dir(run_dir: Path, url_id: str) -> Path:
     """Validate `url_id` against the actual run dir's children + return path.
 
-    Refuses to trust the client's url_id at all — instead we list the run
+    Refuses to trust the client's url_id at all - instead we list the run
     dir's subdirectories (each one is a real per-URL artifact dir) and
     only allow url_ids that match a real dir name. This makes traversal
     attacks impossible AND surfaces a typo as 404 with a clear message.
@@ -782,12 +782,12 @@ def _resolve_url_dir(run_dir: Path, url_id: str) -> Path:
 def _classify_url_dir(url_dir: Path) -> tuple[str, dict | None]:
     """Pick the highest-priority result file in `url_dir`. Returns
     `(result_type, parsed_dict_or_None)`. Returns ('unknown', None) if
-    no result file is present (defensive — shouldn't happen for a
+    no result file is present (defensive - shouldn't happen for a
     cleanly-published run).
 
     The four result files are mutually exclusive by writer contract
     (see `test_ui.report.loader.write_result_file`). If we observe more
-    than one present, log a WARNING — silently picking the first-by-
+    than one present, log a WARNING - silently picking the first-by-
     priority would mask the data corruption.
     """
     matches: list[tuple[str, str]] = [
@@ -800,7 +800,7 @@ def _classify_url_dir(url_dir: Path) -> tuple[str, dict | None]:
             f"reports: {url_dir.name} has multiple mutually-exclusive "
             f"result files {[m[0] for m in matches]}; picking "
             f"highest-priority ({matches[0][0]}). The writer contract "
-            "guarantees these are mutually exclusive — investigate."
+            "guarantees these are mutually exclusive - investigate."
         )
     if not matches:
         return "unknown", None
@@ -842,7 +842,7 @@ def get_report_summary(date: str, run_id: str) -> ReportSummaryOut:
         manifest = read_manifest(run_dir)
     except Exception as e:
         # The directory exists but the manifest is missing/corrupt.
-        # That's a published-run integrity problem, not a 404 — surface
+        # That's a published-run integrity problem, not a 404 - surface
         # as 500 with a useful message rather than synthesizing data.
         raise HTTPException(
             status_code=500,
@@ -963,7 +963,7 @@ _SCREENSHOT_KINDS: dict[str, str] = {
     "/{date}/{run_id}/screenshot",
     responses={
         200: {"content": {"image/png": {}}},
-        304: {"description": "Not modified — client's If-None-Match matched"},
+        304: {"description": "Not modified - client's If-None-Match matched"},
         400: {"description": "Malformed parameters"},
         404: {"description": "No such url_id, or no screenshot of that kind"},
     },
@@ -983,7 +983,7 @@ def get_report_screenshot(
     """
     run_dir = _resolve_report_run_dir(date, run_id)
     url_dir = _resolve_url_dir(run_dir, url_id)
-    filename = _SCREENSHOT_KINDS[which]  # safe — Literal narrows the input
+    filename = _SCREENSHOT_KINDS[which]  # safe - Literal narrows the input
     path = (url_dir / "screenshots" / filename).resolve()
 
     # Defense-in-depth: confine to the report root even after url_id
@@ -1000,7 +1000,7 @@ def get_report_screenshot(
 
     # ETag based on file mtime (ns precision) so the browser revalidates
     # on overwrite. Round-2 added the header; round-3 caught that emit-
-    # only wasn't enough — without the conditional check below, every
+    # only wasn't enough - without the conditional check below, every
     # revalidation request would still send the full PNG bytes back.
     # `cache-control: no-cache` forces revalidation; if `If-None-Match`
     # matches our current ETag, we 304 with no body and the browser

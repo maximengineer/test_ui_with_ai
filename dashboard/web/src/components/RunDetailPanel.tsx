@@ -6,7 +6,7 @@
  * tail of the subprocess log. Polls /api/runs/{id} every 2s while
  * the run is still running (the hook handles that internally).
  *
- * Keeps log fetching ALWAYS-ON (3s interval) even after the run ends —
+ * Keeps log fetching ALWAYS-ON (3s interval) even after the run ends -
  * a `done` run that interests the operator is exactly the case where
  * they want to read what happened.
  */
@@ -28,7 +28,7 @@ export function RunDetailPanel({
   const logs = useRunLogs(dbId, run.data?.status ?? null, 32_768)
   const retry = useRetryRun()
 
-  // Esc to close — quality-of-life detail the operator notices once and
+  // Esc to close - quality-of-life detail the operator notices once and
   // then takes for granted. Cleanup removes the listener on unmount so
   // the next panel doesn't get a stale handler.
   useEffect(() => {
@@ -73,16 +73,16 @@ export function RunDetailPanel({
           <>
             <DetailGrid>
               <DetailRow label="Run ID" value={run.data.run_id} mono />
-              <DetailRow label="Date" value={run.data.date_dir ?? '—'} />
+              <DetailRow label="Date" value={run.data.date_dir ?? '-'} />
               <DetailRow label="Source" value={run.data.source} />
-              <DetailRow label="Started" value={run.data.started_at ?? '—'} />
-              <DetailRow label="Finished" value={run.data.finished_at ?? '—'} />
+              <DetailRow label="Started" value={run.data.started_at ?? '-'} />
+              <DetailRow label="Finished" value={run.data.finished_at ?? '-'} />
               <DetailRow
                 label="Exit code"
                 value={
                   run.data.exit_code === null ||
                   run.data.exit_code === undefined
-                    ? '—'
+                    ? '-'
                     : String(run.data.exit_code)
                 }
               />
@@ -91,7 +91,7 @@ export function RunDetailPanel({
                 value={
                   run.data.pid !== null && run.data.pid !== undefined
                     ? `${run.data.pid} / ${run.data.pgid}`
-                    : '—'
+                    : '-'
                 }
                 mono
               />
@@ -100,7 +100,7 @@ export function RunDetailPanel({
               )}
             </DetailGrid>
 
-            {/* Retry. Only meaningful for terminal runs — pending/running
+            {/* Retry. Only meaningful for terminal runs - pending/running
                 would 409. We DO show the button always so the operator
                 can read the resulting error if they try; cheaper than
                 hiding+explaining-why-hidden in a tooltip. */}

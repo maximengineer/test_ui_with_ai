@@ -55,7 +55,7 @@ def test_read_returns_none_for_missing(isolated_data_root):
 
 
 def test_read_returns_none_for_corrupt(isolated_data_root):
-    """A corrupt run record should not crash callers — return None and log."""
+    """A corrupt run record should not crash callers - return None and log."""
     isolated_data_root.mkdir()
     (isolated_data_root / "01HXX0000000000000000000A0.run.json").write_text(
         "not json", encoding="utf-8"
@@ -77,7 +77,7 @@ def test_write_failure_does_not_raise(isolated_data_root, monkeypatch):
 
     monkeypatch.setattr(Path, "write_text", _failing_write_text)
 
-    # Must not raise — the underlying OSError is logged but swallowed.
+    # Must not raise - the underlying OSError is logged but swallowed.
     write_run_record("01HXX0000000000000000000A0", kind="baseline")
 
 

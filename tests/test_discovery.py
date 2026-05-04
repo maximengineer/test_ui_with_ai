@@ -6,14 +6,14 @@ under `tmp_path` and asserts on the returned dict.
 
 Particularly important to cover:
   - Resilience: missing date dir, missing comparison_results.json, malformed
-    JSON, non-dir entries — none should raise; bad URLs are skipped.
+    JSON, non-dir entries - none should raise; bad URLs are skipped.
   - The single-source-of-truth check: A.3 simplified the discovery logic to
     trust `result.changes_detected` (was OR-ing 6 fields). These tests pin
-    that simplification — ensure a URL with `changes_detected=true` lands in
+    that simplification - ensure a URL with `changes_detected=true` lands in
     `with_changes` even when per-category flags are all False, and vice versa.
   - The `structured_data_path` is None when the diffs/ subdir is absent
     (happens when the comparator detected changes via screenshot only and
-    didn't write per-category JSON yet — rare but possible).
+    didn't write per-category JSON yet - rare but possible).
 """
 
 from __future__ import annotations
@@ -43,7 +43,7 @@ def _seed_url_dir(
 
     `changes_detected=None` omits the field entirely (simulates pre-A.1
     output or error-path comparator results that have no `result` block).
-    `raw_json` overrides the body completely — for malformed-JSON tests.
+    `raw_json` overrides the body completely - for malformed-JSON tests.
     `create_diffs_dir=False` skips creating the `diffs/` subdir.
     """
     url_dir = date_root / url_name
@@ -78,7 +78,7 @@ def _seed_url_dir(
 def test_returns_empty_buckets_when_date_dir_missing(tmp_path):
     """Missing `<root>/<date>/` → returns `{with_changes: [], without_changes: []}`.
 
-    Crucially, must NOT raise — the report stage may run before the comparator
+    Crucially, must NOT raise - the report stage may run before the comparator
     has produced anything for the requested date, and we want the report stage
     to handle that gracefully.
     """
@@ -94,7 +94,7 @@ def test_returns_empty_buckets_when_date_dir_empty(tmp_path):
 
 
 # ---------------------------------------------------------------------------
-# Bucketing — the post-A.3 single-source-of-truth check
+# Bucketing - the post-A.3 single-source-of-truth check
 # ---------------------------------------------------------------------------
 
 
@@ -132,7 +132,7 @@ def test_only_top_level_changes_detected_is_consulted(tmp_path):
     """A.3 simplification: per-category flags are NOT consulted independently.
 
     Pre-A.3 code OR-ed 6 fields; A.3 trusts only `result.changes_detected`.
-    This test pins that — a URL with `changes_detected=False` but per-category
+    This test pins that - a URL with `changes_detected=False` but per-category
     flags True (which would never happen in real comparator output, but is
     our regression guard) lands in without_changes. If someone reintroduces
     the OR, this test fails.
@@ -160,7 +160,7 @@ def test_only_top_level_changes_detected_is_consulted(tmp_path):
 
 
 def test_missing_changes_detected_field_treated_as_false(tmp_path):
-    """Error-path comparator results have no `result.changes_detected` — they
+    """Error-path comparator results have no `result.changes_detected` - they
     must land in without_changes (which is the pre-A.3 behavior preserved)."""
     date = "02-05-2026"
     date_root = tmp_path / date
@@ -182,7 +182,7 @@ def test_missing_changes_detected_field_treated_as_false(tmp_path):
 
 
 def test_structured_data_path_none_when_diffs_dir_missing(tmp_path):
-    """If diffs/ doesn't exist, `structured_data_path` must be None — the
+    """If diffs/ doesn't exist, `structured_data_path` must be None - the
     report stage uses None as a sentinel that there's no per-category data
     to load (vs. an empty dict, which would break downstream)."""
     date = "02-05-2026"
@@ -205,7 +205,7 @@ def test_structured_data_path_set_when_diffs_dir_exists(tmp_path):
 
 
 # ---------------------------------------------------------------------------
-# Resilience to bad inputs — must skip, not raise
+# Resilience to bad inputs - must skip, not raise
 # ---------------------------------------------------------------------------
 
 
@@ -277,7 +277,7 @@ def test_buckets_mixed_urls_correctly(tmp_path):
 
 
 def test_returned_entries_carry_full_comparison_data(tmp_path):
-    """Each bucketed entry includes the parsed comparison_data dict — the
+    """Each bucketed entry includes the parsed comparison_data dict - the
     report stage uses it for screenshot path resolution etc."""
     date = "02-05-2026"
     date_root = tmp_path / date
@@ -347,7 +347,7 @@ def test_drills_through_run_id_subdir_in_new_layout(tmp_path):
 
 def test_skips_date_dir_when_only_running_runs_present(tmp_path):
     """B.1: a date dir whose only run is `status="running"` must yield empty
-    buckets — discovery shouldn't accidentally fall back to legacy mode and
+    buckets - discovery shouldn't accidentally fall back to legacy mode and
     treat the in-progress run dir as a url_dir."""
     date = "02-05-2026"
     date_dir = tmp_path / date

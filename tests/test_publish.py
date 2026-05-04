@@ -30,7 +30,7 @@ def test_renames_tmp_to_final_on_clean_exit(tmp_path):
 
 
 def test_leaves_tmp_in_place_on_exception(tmp_path):
-    """No promotion if the body raises — the .tmp- dir stays for inspection."""
+    """No promotion if the body raises - the .tmp- dir stays for inspection."""
     run_id = "01HYY0000000000000000000A0"
 
     with pytest.raises(RuntimeError, match="boom"):
@@ -53,7 +53,7 @@ def test_refuses_when_final_already_exists(tmp_path):
 
 
 def test_refuses_when_tmp_already_exists(tmp_path):
-    """Same logic — if the tmp dir exists, refuse rather than overwrite."""
+    """Same logic - if the tmp dir exists, refuse rather than overwrite."""
     run_id = "01HAA0000000000000000000A0"
     (tmp_path / f".tmp-{run_id}").mkdir()
 

@@ -2,12 +2,12 @@
 
 For each site without an explicit `id`, derives one from the slugified
 `name` (or `url` if name is missing/typo'd) and writes the file back.
-Idempotent — running twice is a no-op.
+Idempotent - running twice is a no-op.
 
 Uses `ruamel.yaml` (round-trip mode) instead of `pyyaml` so comments,
 blank lines, key order, and quoting style survive the rewrite. The
 operator's editorial choices in sites.yml are preserved; only `id:`
-keys get added (or — for the legacy `namd:` typo — replaced with `name:`).
+keys get added (or - for the legacy `namd:` typo - replaced with `name:`).
 
 Usage::
 

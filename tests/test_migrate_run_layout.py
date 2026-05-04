@@ -3,7 +3,7 @@
 Pins the conversion from pre-B.1 (`<kind>/<date>/<url_dir>/`) to B.1
 (`<kind>/<date>/<run_id>/<url_dir>/`).
 
-Idempotency is the most important property — running the migration twice
+Idempotency is the most important property - running the migration twice
 must be a no-op so dashboard / cron-style "always run on startup" use is
 safe.
 """
@@ -67,7 +67,7 @@ def test_migrates_single_date_dir(tmp_path):
 
 
 def test_migration_is_idempotent(tmp_path):
-    """Second invocation is a no-op — no extra run_id dirs created."""
+    """Second invocation is a no-op - no extra run_id dirs created."""
     legacy = tmp_path / "current" / "02-01-2099"
     _seed_legacy_url_dir(legacy, "site_a")
     _seed_legacy_url_dir(legacy, "site_b")
@@ -127,7 +127,7 @@ def test_migration_skips_already_b1_layout(tmp_path):
         ),
     )
 
-    # Stray legacy-looking url_dir at date level — must NOT get folded in
+    # Stray legacy-looking url_dir at date level - must NOT get folded in
     # because a real B.1 run already exists for this date.
     (date_dir / "stray_legacy_url").mkdir()
 
@@ -154,7 +154,7 @@ def test_migration_recovers_from_orphan_empty_run_dir(tmp_path):
     legacy = tmp_path / "baseline" / "04-01-2099"
     _seed_legacy_url_dir(legacy, "example.com")
 
-    # Pre-create an orphan ULID dir without a manifest — looks like B.1
+    # Pre-create an orphan ULID dir without a manifest - looks like B.1
     # layout to the eye but is incomplete.
     orphan_id = "01HZZ0000000000000000000B0"
     (legacy / orphan_id).mkdir()
@@ -190,7 +190,7 @@ def test_migration_dry_run_changes_nothing(tmp_path):
     rc = migrate_run_layout.main()
     assert rc == 0
 
-    # url_dir should still be at the date level — nothing moved.
+    # url_dir should still be at the date level - nothing moved.
     assert (legacy / "example.com" / "index.html").exists()
     # No run_id dir created.
     run_dirs = [c for c in legacy.iterdir() if c.is_dir() and is_valid_run_id(c.name)]
@@ -199,7 +199,7 @@ def test_migration_dry_run_changes_nothing(tmp_path):
 
 def test_migration_skips_empty_date_dirs(tmp_path):
     """Empty `<kind>/<date>/` and dirs containing only `latest` symlink are
-    silently skipped — no spurious run_id dir is created."""
+    silently skipped - no spurious run_id dir is created."""
     empty_date = tmp_path / "baseline" / "01-01-2099"
     empty_date.mkdir(parents=True)
 

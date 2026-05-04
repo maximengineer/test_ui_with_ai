@@ -89,7 +89,7 @@ def _seed_report_run(
             url_count=len(url_results),
         ),
     )
-    # 1x1 transparent PNG bytes — smallest valid PNG.
+    # 1x1 transparent PNG bytes - smallest valid PNG.
     png_1x1 = bytes.fromhex(
         "89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4"
         "890000000d49444154789c6300010000000500010d0a2db40000000049454e44ae426082"
@@ -99,7 +99,7 @@ def _seed_report_run(
         url_dir.mkdir()
         (url_dir / filename).write_text(json.dumps(payload), encoding="utf-8")
         # Also write structured_data so the detail route has something
-        # to return (otherwise it stays None — also a tested case).
+        # to return (otherwise it stays None - also a tested case).
         (url_dir / "structured_data.json").write_text(
             json.dumps({"diff": "synthetic"}), encoding="utf-8"
         )
@@ -165,7 +165,7 @@ def test_summary_400_for_bogus_date(reports_client):
 
 
 def test_summary_400_for_bogus_run_id(reports_client):
-    """Same defense for run_id — must be a valid ULID."""
+    """Same defense for run_id - must be a valid ULID."""
     r = reports_client.get("/api/reports/01-01-2099/not-a-ulid")
     assert r.status_code == 400
 
@@ -200,7 +200,7 @@ def test_urls_lists_all_with_result_type_and_severity(reports_client):
 
 def test_urls_returns_empty_items_for_run_with_no_url_dirs(reports_client):
     """A run dir with only a manifest.json (no per-URL subdirs) returns
-    an empty items list — not a 404, not a 500."""
+    an empty items list - not a 404, not a 500."""
     rid = new_run_id()
     run_dir = settings.report_dir / "01-01-2099" / rid
     run_dir.mkdir(parents=True)
@@ -380,7 +380,7 @@ def test_screenshot_returns_304_on_matching_if_none_match(reports_client):
 
 def test_screenshot_returns_200_on_stale_if_none_match(reports_client):
     """If the client sends a stale ETag (e.g. file was overwritten by
-    a re-run), the server must return 200 + new bytes — not 304."""
+    a re-run), the server must return 200 + new bytes - not 304."""
     rid = _seed_report_run(
         date="01-01-2099",
         url_results={"site-a": ("ai_analysis.json", {})},
@@ -424,7 +424,7 @@ def test_classify_url_dir_warns_on_multiple_result_files(reports_client):
     exist (writer contract violation), a WARNING fires so the operator
     sees the corruption instead of it being silently masked.
 
-    Captures loguru output via a dedicated sink — `caplog` (stdlib) and
+    Captures loguru output via a dedicated sink - `caplog` (stdlib) and
     `capsys` (stderr capture) don't see loguru's writes reliably under
     pytest because pytest's stderr capture races with loguru's
     asynchronous-flushable handler.

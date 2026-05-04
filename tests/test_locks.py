@@ -2,7 +2,7 @@
 
 Covers:
   - acquire_lock context manager: writes on enter, removes on exit
-    (including on exception — the lock must NEVER persist into a published
+    (including on exception - the lock must NEVER persist into a published
     run dir)
   - LockFile JSON shape round-trips through Pydantic
   - is_pgid_alive: live PID returns True, made-up PID returns False
@@ -49,7 +49,7 @@ def test_lockfile_serializes_and_round_trips():
 
 
 def test_lockfile_rejects_unknown_fields():
-    """extra='forbid' is essential — a typo'd field name would silently
+    """extra='forbid' is essential - a typo'd field name would silently
     drop on read otherwise, masking a real bug in the writer."""
     from pydantic import ValidationError
 
@@ -129,7 +129,7 @@ def test_remove_lock_raises_on_unexpected_oserror(tmp_path, monkeypatch):
 
 
 # ---------------------------------------------------------------------------
-# acquire_lock context manager — must always remove
+# acquire_lock context manager - must always remove
 # ---------------------------------------------------------------------------
 
 
@@ -143,7 +143,7 @@ def test_acquire_lock_removes_on_exception(tmp_path):
     """The lock MUST NOT persist into a published run dir if the work raised.
 
     If we left the .lock behind, the next workflow precondition check
-    would see it and (after PGID-liveness verification) decide it's stale —
+    would see it and (after PGID-liveness verification) decide it's stale -
     correct outcome but unnecessary noise. Cleaner to remove on exit.
     """
     with pytest.raises(RuntimeError, match="boom"):
@@ -225,7 +225,7 @@ def test_find_live_lock_finds_self_lock(tmp_path):
 
 
 def test_find_live_lock_ignores_stale_lock(tmp_path):
-    """Lock with a dead PID should NOT block — return None (and log a warning)."""
+    """Lock with a dead PID should NOT block - return None (and log a warning)."""
     date_dir = tmp_path / "01-01-2099"
     tmp_run = date_dir / ".tmp-01HZZ0000000000000000000B0"
     tmp_run.mkdir(parents=True)
@@ -245,11 +245,11 @@ def test_find_live_lock_ignores_stale_lock(tmp_path):
 
 def test_find_live_lock_skips_files_and_non_tmp_dirs(tmp_path):
     """Only `.tmp-*` directories are considered. Stray .lock files at the
-    date level (or inside published run_id dirs) must not be scanned —
+    date level (or inside published run_id dirs) must not be scanned -
     a published run that left a .lock by mistake shouldn't lock the date."""
     date_dir = tmp_path / "01-01-2099"
     date_dir.mkdir()
-    # A regular file and a non-tmp dir at the date level — both must be ignored.
+    # A regular file and a non-tmp dir at the date level - both must be ignored.
     (date_dir / "stray.txt").write_text("not a dir", encoding="utf-8")
     weird_dir = date_dir / "01HXX0000000000000000000A0"  # ULID, not .tmp-
     weird_dir.mkdir()

@@ -4,7 +4,7 @@
     // (the IDE flags it otherwise: "tsBuildInfoFile can only be
     // specified when composite or incremental is enabled"). With
     // `noEmit: true` below, composite's emit-implications are
-    // overridden — only the buildinfo state tracking is kept, which
+    // overridden - only the buildinfo state tracking is kept, which
     // is what makes `tsc -b` actually incremental instead of treating
     // the project as out-of-date on every build.
     "composite": true,
@@ -29,7 +29,7 @@
     "erasableSyntaxOnly": true,
     "noFallthroughCasesInSwitch": true,
 
-    /* Path alias — mirrors vite.config.ts so the IDE + tsc agree.
+    /* Path alias - mirrors vite.config.ts so the IDE + tsc agree.
      * No `baseUrl` needed: TS 5.0 deprecated it, and with
      * `moduleResolution: "bundler"` the `paths` values resolve
      * relative to this tsconfig file's location automatically. */

@@ -1,7 +1,7 @@
 """Entry-point + dev-mode toggle tests (Phase C.1 review fixes).
 
 `dashboard.api.__main__._resolve_port` and `dashboard.api.main._is_dev_mode`
-are tiny but load-bearing — they sit at the seam between the operator's
+are tiny but load-bearing - they sit at the seam between the operator's
 env-var input and the running server. A bad port or unexpected truthy
 value here turns into a confusing crash or a quietly-wide-open CORS
 policy. Pin both.
@@ -27,7 +27,7 @@ def test_resolve_port_unset_returns_default(monkeypatch):
 
 
 def test_resolve_port_empty_string_returns_default(monkeypatch):
-    """Empty env var (`export AFR_DASHBOARD_PORT=`) is the same as unset —
+    """Empty env var (`export AFR_DASHBOARD_PORT=`) is the same as unset -
     common operator footgun where they `unset` half-heartedly."""
     monkeypatch.setenv("AFR_DASHBOARD_PORT", "")
     assert _resolve_port() == 8080
@@ -60,7 +60,7 @@ def test_resolve_port_out_of_range_exits(monkeypatch, bad):
 
 
 # --------------------------------------------------------------------------- #
-# AFR_DASHBOARD_DEV_MODE — drives whether CORS middleware is installed.      #
+# AFR_DASHBOARD_DEV_MODE - drives whether CORS middleware is installed.      #
 # --------------------------------------------------------------------------- #
 
 
@@ -73,7 +73,7 @@ def test_is_dev_mode_truthy_values(monkeypatch, value):
 @pytest.mark.parametrize("value", ["", "0", "false", "False", "no"])
 def test_is_dev_mode_falsy_values(monkeypatch, value):
     """Unset, empty, and the standard boolean-false strings must all be
-    treated as off. Critical because dev mode loosens CORS — defaulting
+    treated as off. Critical because dev mode loosens CORS - defaulting
     on would be a security regression."""
     monkeypatch.setenv("AFR_DASHBOARD_DEV_MODE", value)
     assert _is_dev_mode() is False
@@ -86,12 +86,12 @@ def test_is_dev_mode_unset_is_false(monkeypatch):
 
 
 # --------------------------------------------------------------------------- #
-# CORS wiring — proves the middleware is ACTUALLY installed (or not) based   #
+# CORS wiring - proves the middleware is ACTUALLY installed (or not) based   #
 # on the dev_mode flag, not just that the helper returns the right boolean. #
 # --------------------------------------------------------------------------- #
 #
 # Round 1 added an env-toggle helper but the `if _is_dev_mode():` ran at
-# module import — so flipping the env in a test couldn't change CORS state.
+# module import - so flipping the env in a test couldn't change CORS state.
 # Round 2 introduced `create_app(dev_mode=...)` precisely so these tests
 # are possible. Without them, a refactor that broke the CORS branch would
 # only surface once the React SPA started seeing CORS errors in dev.
@@ -102,7 +102,7 @@ def _cors_origin_for(dev_mode: bool) -> str | None:
     `access-control-allow-origin` response header, or None if the header
     is absent (i.e. the middleware did not install the rule).
 
-    Deliberately does NOT use TestClient as a context manager — that would
+    Deliberately does NOT use TestClient as a context manager - that would
     trigger the lifespan, which calls `init_db(settings.runs_db_path)` and
     would create `data/dashboard.db` as a test side-effect. CORS preflight
     is handled by starlette middleware BEFORE any route handler (and thus
@@ -144,7 +144,7 @@ def test_create_app_default_consults_env(monkeypatch):
 
 
 # --------------------------------------------------------------------------- #
-# Platform check — dashboard is Linux-only. Mac/Windows operators must use   #
+# Platform check - dashboard is Linux-only. Mac/Windows operators must use   #
 # Docker. _require_linux runs at lifespan start and hard-fails non-Linux.    #
 # --------------------------------------------------------------------------- #
 
@@ -157,7 +157,7 @@ def test_require_linux_passes_on_linux():
 
 def test_require_linux_raises_on_other_platform(monkeypatch):
     """On a non-Linux platform, the check MUST raise with a message that
-    points the operator at Docker — silent misbehavior would be worse
+    points the operator at Docker - silent misbehavior would be worse
     than a hard fail at startup."""
     monkeypatch.setattr("dashboard.api.main.sys.platform", "darwin")
     with pytest.raises(RuntimeError, match="Docker"):

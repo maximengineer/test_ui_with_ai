@@ -23,7 +23,7 @@ const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
       // Refetch on focus is too aggressive for a dashboard the operator
-      // tabs back to repeatedly — we rely on the per-hook interval.
+      // tabs back to repeatedly - we rely on the per-hook interval.
       refetchOnWindowFocus: false,
       // One retry on transient failures; more would spam the backend.
       retry: 1,

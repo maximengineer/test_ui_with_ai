@@ -1,6 +1,6 @@
 """Tests for the job-runner routes (POST /api/runs, /retry, GET /logs).
 
-The routes themselves are thin — most of the logic lives in `runner.py`
+The routes themselves are thin - most of the logic lives in `runner.py`
 (tested in test_dashboard_runner.py). These tests focus on:
   - HTTP shape of requests and responses
   - 409 idempotency (same kind+date already in flight)
@@ -86,7 +86,7 @@ def fake_spawn(monkeypatch):
                 pid_start_time="0",
                 started_at=settings.get_current_datetime(),
             )
-        # Return a sentinel — tests don't await it.
+        # Return a sentinel - tests don't await it.
         sentinel = MagicMock()
         sentinel.pid = 99999
         return sentinel
@@ -99,7 +99,7 @@ def fake_spawn(monkeypatch):
 def client(tmp_path, monkeypatch, fake_spawn):
     """Standard test client + tmp DB + faked spawn. The `fake_spawn`
     fixture is requested implicitly so all client tests get the
-    spawn-mocking behavior — no test should accidentally fork."""
+    spawn-mocking behavior - no test should accidentally fork."""
     db_path = _wire_settings(tmp_path, monkeypatch)
     with _client_with(db_path) as c:
         yield c
@@ -130,7 +130,7 @@ def _seed_complete_run(kind_root: Path, date: str, kind: str = "baseline") -> st
 
 
 # --------------------------------------------------------------------------- #
-# POST /api/runs — happy path                                                #
+# POST /api/runs - happy path                                                #
 # --------------------------------------------------------------------------- #
 
 
@@ -154,7 +154,7 @@ def test_post_runs_current_works_same_as_baseline(client):
 
 
 # --------------------------------------------------------------------------- #
-# POST /api/runs — 412 workflow preconditions                                #
+# POST /api/runs - 412 workflow preconditions                                #
 # --------------------------------------------------------------------------- #
 
 
@@ -197,7 +197,7 @@ def test_post_runs_report_with_explicit_date_uses_that_date_for_check(client):
 
 
 # --------------------------------------------------------------------------- #
-# POST /api/runs — 409 idempotency                                           #
+# POST /api/runs - 409 idempotency                                           #
 # --------------------------------------------------------------------------- #
 
 
@@ -236,7 +236,7 @@ def test_post_runs_does_not_409_when_prior_run_is_terminal(client, fake_spawn):
 
 
 # --------------------------------------------------------------------------- #
-# POST /api/runs — 422 validation                                            #
+# POST /api/runs - 422 validation                                            #
 # --------------------------------------------------------------------------- #
 
 
@@ -280,7 +280,7 @@ def test_retry_409_when_original_kind_still_running(client):
 
 def test_retry_succeeds_after_original_terminal(client, fake_spawn):
     """Retry after the original has finished spawns a new run with the
-    same kind. The run_id is fresh — same args, new identity."""
+    same kind. The run_id is fresh - same args, new identity."""
     r1 = client.post("/api/runs", json={"kind": "baseline"})
     db_id_1 = r1.json()["db_id"]
     rid_1 = r1.json()["run_id"]
@@ -396,19 +396,19 @@ def test_H2_report_request_rejects_path_traversal_in_date(client):
 
 def test_H2_report_request_accepts_real_date(client):
     """A real DD-MM-YYYY date passes validation (then hits 412 because no
-    comparator artifacts exist — proves we got past the model)."""
+    comparator artifacts exist - proves we got past the model)."""
     r = client.post("/api/runs", json={"kind": "report", "date": "01-01-2099"})
-    assert r.status_code == 412  # no comparator data — but date passed validation
+    assert r.status_code == 412  # no comparator data - but date passed validation
 
 
 def test_M3_openapi_emits_discriminator_for_run_request(client):
     """Pydantic + FastAPI must generate a `oneOf` with a `discriminator`
-    on the kind field — otherwise the openapi-typescript generator can't
+    on the kind field - otherwise the openapi-typescript generator can't
     produce typed unions for the React frontend."""
     schema = client.get("/openapi.json").json()
     runs_post = schema["paths"]["/api/runs"]["post"]
     body_schema_ref = runs_post["requestBody"]["content"]["application/json"]["schema"]
-    # The body is a $ref to the union OR an inline oneOf — accept either shape.
+    # The body is a $ref to the union OR an inline oneOf - accept either shape.
     body_schema = body_schema_ref
     if "$ref" in body_schema_ref:
         ref = body_schema_ref["$ref"].split("/")[-1]
@@ -452,7 +452,7 @@ def test_H5_runrow_renders_with_null_pid_pgid(client):
 
 def test_M4_retry_preserves_args_beyond_kind(client, fake_spawn):
     """Retry of a comparator with explicit baseline_run_id MUST preserve
-    that field through the round-trip — args_json → request → spawn.
+    that field through the round-trip - args_json → request → spawn.
     Pre-fix only `kind` was checked, so a regression dropping args
     silently would slip through.
     """
@@ -498,7 +498,7 @@ def test_M4_retry_preserves_args_beyond_kind(client, fake_spawn):
 def test_M4_500_path_marks_row_failed_with_error(client, monkeypatch):
     """When `runner.spawn_run` raises FileNotFoundError (e.g. python
     interpreter missing from PATH), the route MUST mark the row failed
-    with the error message — not leave it in `pending` to confuse
+    with the error message - not leave it in `pending` to confuse
     the operator."""
 
     async def _spawn_raises(**_):
@@ -526,7 +526,7 @@ def test_M4_500_path_marks_row_failed_with_error(client, monkeypatch):
 
 def test_lifespan_recovers_orphaned_running_row(tmp_path, monkeypatch):
     """A row left in `running` from a 'previous' dashboard instance must be
-    transitioned to `interrupted` by the lifespan's startup recovery path —
+    transitioned to `interrupted` by the lifespan's startup recovery path -
     BEFORE sync runs (so sync doesn't double-insert)."""
     db_path = _wire_settings(tmp_path, monkeypatch)
     dbmod.init_db(db_path)
@@ -570,17 +570,17 @@ def _empty_watcher_set_between_tests():
     the next.
 
     This file uses `fake_spawn` everywhere, so the set should be empty at
-    the start of every test — pin that as an explicit invariant. At
+    the start of every test - pin that as an explicit invariant. At
     teardown we just clear the set; the underlying Tasks belong to
     whatever event loop pytest-asyncio used and are gone by then.
 
     The previous fixture cancelled tasks at teardown, which masked
-    unhandled exceptions inside watchers — replaced (round-3 H3 fix) so
+    unhandled exceptions inside watchers - replaced (round-3 H3 fix) so
     a watcher failure now surfaces as a test failure during the run,
     not as silent log noise.
     """
     assert not runner._active_watchers, (
-        "watcher set leaked from a previous test — investigate before pinning."
+        "watcher set leaked from a previous test - investigate before pinning."
     )
     yield
     runner._active_watchers.clear()

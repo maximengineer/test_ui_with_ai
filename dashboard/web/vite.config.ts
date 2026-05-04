@@ -6,7 +6,7 @@ import path from 'node:path'
 // Vite config for the dashboard SPA.
 //
 // `proxy: '/api'` forwards XHRs to the FastAPI backend during dev so the
-// SPA and API share an origin from the browser's POV — same posture as
+// SPA and API share an origin from the browser's POV - same posture as
 // production where FastAPI serves the SPA same-origin (Phase C.3 work).
 // Without this we'd be relying on the dev-mode CORS middleware for every
 // request, which works but masks any same-origin assumptions in the code.

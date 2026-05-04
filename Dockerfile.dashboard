@@ -8,7 +8,7 @@
 # Same-origin serving is the production posture: no CORS, the React
 # dev-server proxy doesn't apply, and the only network hop the
 # operator's browser makes is to :8080. Dev workflow uses Vite at
-# :5173 with the proxy — see `make dashboard-dev`.
+# :5173 with the proxy - see `make dashboard-dev`.
 
 # --------------------------------------------------------------------------- #
 # Stage 1: build the React SPA.                                              #
@@ -33,7 +33,7 @@ RUN npm run build
 FROM python:3.13 AS dependencies
 
 # System dependencies. Same set as the test-ui Dockerfile because the
-# dashboard's spawned subprocesses are exactly the test-ui CLI — they
+# dashboard's spawned subprocesses are exactly the test-ui CLI - they
 # need every native library the standalone CLI image needs (Playwright
 # headless chromium, opencv-python-headless, Pillow / scikit-image).
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -54,7 +54,7 @@ WORKDIR /app
 
 COPY pyproject.toml poetry.lock* ./
 
-# Main deps only — pytest/ruff aren't needed in the runtime image.
+# Main deps only - pytest/ruff aren't needed in the runtime image.
 RUN poetry config virtualenvs.create false \
   && poetry install --only main --no-interaction --no-ansi
 

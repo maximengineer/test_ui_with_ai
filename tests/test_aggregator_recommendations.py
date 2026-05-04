@@ -5,7 +5,7 @@ the legacy `overall_severity == "ERROR"` predicate, which post-A.1.8 is
 always 0 (errors live in `AIAnalysisError(result_type="analysis_error")`
 now, with severity constrained to CRITICAL/WARNING/SAFE). The fix now
 counts by `result_type == "analysis_error"`. Pre-fix this had only
-transitive coverage via the report goldens — pin it directly here.
+transitive coverage via the report goldens - pin it directly here.
 """
 
 from __future__ import annotations

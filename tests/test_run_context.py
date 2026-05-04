@@ -51,7 +51,7 @@ def test_keyboard_interrupt_marks_interrupted_and_preserves_tmp(tmp_path):
             (ctx.run_root / "partial.txt").write_text("oops", encoding="utf-8")
             raise KeyboardInterrupt("simulated ^C")
 
-    # NOT promoted — tmp dir preserved for inspection.
+    # NOT promoted - tmp dir preserved for inspection.
     assert not (date_dir / run_id).exists()
     tmp_dir = date_dir / f".tmp-{run_id}"
     assert tmp_dir.exists()
@@ -100,7 +100,7 @@ def test_forgetting_complete_is_a_loud_failure(tmp_path):
 
     The original boilerplate had the symmetry built in (complete_manifest
     was the LAST call inside the try). Wrapping it in a CM made it possible
-    for a caller to forget — surface this as a hard error so the bug is
+    for a caller to forget - surface this as a hard error so the bug is
     found in dev, not by an operator looking at a status="running" manifest
     days later.
     """
@@ -137,7 +137,7 @@ def test_source_run_ids_recorded_in_manifest(tmp_path):
 def test_post_complete_raise_preserves_complete_status(tmp_path):
     """If the body calls ctx.complete() and THEN a later line raises (e.g.
     a post-success cleanup step fails), the manifest must stay at
-    status='complete' — NOT silently get downgraded to 'failed'.
+    status='complete' - NOT silently get downgraded to 'failed'.
 
     Pre-fix bug: the bare `except BaseException` rewrote status='complete'
     → 'failed' for a successful run that crashed in cleanup. Operator
@@ -155,7 +155,7 @@ def test_post_complete_raise_preserves_complete_status(tmp_path):
             ctx.complete(url_count=1)
             # Simulate something that runs after work is logically done
             # (e.g. a future caller adding a metrics-publish step inside
-            # the with-block). It raises — but the work IS done.
+            # the with-block). It raises - but the work IS done.
             raise RuntimeError("post-cleanup failure")
 
     # The tmp dir is preserved (atomic_run_dir doesn't promote on exception).
@@ -170,14 +170,14 @@ def test_post_complete_raise_preserves_complete_status(tmp_path):
 
 
 def test_complete_is_idempotent(tmp_path):
-    """A second `.complete()` call short-circuits — does NOT rewrite
+    """A second `.complete()` call short-circuits - does NOT rewrite
     finished_at or re-hash the dir.
 
     Pinning this catches a regression where someone removes the
     `if self._completed: return` guard. Without it, a second call would
     silently shift `finished_at` to the later timestamp and re-compute
     the file checksum (which can differ if the body wrote more files
-    between the two calls) — producing a different audit trail than the
+    between the two calls) - producing a different audit trail than the
     operator expects from a "completed" run.
     """
     date_dir = tmp_path / "01-01-2099"

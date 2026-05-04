@@ -11,7 +11,7 @@ Convention:
 
 We intentionally do NOT reuse `test_ui.common.sites.Site` directly. The
 internal model has `extra="forbid"` and a strict id pattern; the API
-response shape is a *projection* — fewer constraints, no validation
+response shape is a *projection* - fewer constraints, no validation
 overhead, free to evolve independently if the wire ever needs to add
 metadata the on-disk YAML doesn't have.
 """
@@ -72,7 +72,7 @@ class SiteCreateIn(BaseModel):
     """`POST /api/sites` body. `id` is auto-generated server-side from the
     slugified name + numeric dedup suffix; the client never sets it.
 
-    `max_length` caps mirror the underlying `Site` model — defending at
+    `max_length` caps mirror the underlying `Site` model - defending at
     the wire boundary too means a 100KB URL gets rejected with a clear
     422 instead of bloating sites.yml at the persistence layer.
     """
@@ -84,7 +84,7 @@ class SiteCreateIn(BaseModel):
 
 
 class SiteUpdateIn(BaseModel):
-    """`PATCH /api/sites/{id}` body. Both fields optional — operator can
+    """`PATCH /api/sites/{id}` body. Both fields optional - operator can
     rename without changing the URL or vice versa. `id` is immutable
     (changing it would invalidate existing per-site data dirs); the URL
     path component is authoritative."""
@@ -120,7 +120,7 @@ class RunRow(BaseModel):
     """One row from `runs`, projected for the wire.
 
     `args_json` and `command_json` are exposed as parsed objects (not raw
-    strings) — saves the frontend a JSON.parse and gives openapi-typescript
+    strings) - saves the frontend a JSON.parse and gives openapi-typescript
     a typed shape to work with.
     """
 
@@ -163,7 +163,7 @@ class HealthOut(BaseModel):
 
     `db_ok` False → SQLite open or migration failed; the dashboard is
     running in a degraded state and most routes will 500.
-    `ai_analyzer_ok` is checked with a 2s timeout — the dashboard never
+    `ai_analyzer_ok` is checked with a 2s timeout - the dashboard never
     hangs on a slow analyzer; a False here just disables AI-dependent
     UI affordances client-side.
     """
@@ -184,7 +184,7 @@ class SyncOut(BaseModel):
     """`POST /api/sync` result. `synced` is the count of NEW rows inserted.
 
     Re-running sync should be a no-op (returning `synced=0`) once the DB
-    has caught up to the on-disk state — the test pins this idempotency.
+    has caught up to the on-disk state - the test pins this idempotency.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -275,7 +275,7 @@ class RunSpawnedOut(BaseModel):
 
     db_id: int
     run_id: str
-    status: RunStatus  # always "running" at this point — pinned for the wire
+    status: RunStatus  # always "running" at this point - pinned for the wire
 
 
 # --------------------------------------------------------------------------- #
@@ -296,7 +296,7 @@ class RunSpawnedOut(BaseModel):
 
 
 class ReportSummaryOut(BaseModel):
-    """`GET /api/reports/{date}/{run_id}` — top-level summary. `run_id`,
+    """`GET /api/reports/{date}/{run_id}` - top-level summary. `run_id`,
     `started_at`, `finished_at`, `url_count` come from the manifest;
     `severity_counts` is computed from the per-URL files."""
 
@@ -327,7 +327,7 @@ ReportResultType = Literal[
 class ReportUrlSummary(BaseModel):
     """One row in the `/api/reports/{date}/{run_id}/urls` listing.
 
-    `severity` is only populated for `result_type='analysis_success'` —
+    `severity` is only populated for `result_type='analysis_success'` -
     the other result types don't have a meaningful severity. The frontend
     can surface a colored pill keyed off either `result_type` (always
     present) or `severity` (success-only)."""
@@ -337,7 +337,7 @@ class ReportUrlSummary(BaseModel):
     url_id: str
     result_type: ReportResultType
     severity: str | None = None  # CRITICAL / WARNING / SAFE
-    # The URL the analysis ran against — operator-friendly when the id is
+    # The URL the analysis ran against - operator-friendly when the id is
     # a slug (e.g. "department-of-health" doesn't tell you what site that
     # is until you look at the URL).
     url: str | None = None
@@ -350,11 +350,11 @@ class ReportUrlsOut(BaseModel):
 
 
 class ReportUrlDetail(BaseModel):
-    """`GET /api/reports/{date}/{run_id}/url?id=<url_id>` — the per-URL
+    """`GET /api/reports/{date}/{run_id}/url?id=<url_id>` - the per-URL
     AI analysis JSON, returned verbatim from disk.
 
     Typed as `dict` because the AI analysis schema lives in
-    `test_ui/contracts/` and varies by `result_type` — wiring up a full
+    `test_ui/contracts/` and varies by `result_type` - wiring up a full
     discriminated union here would duplicate ~200 LOC of pydantic models
     that already exist in the contracts package, with the only payoff
     being typed access in the React drill-in (which renders it as JSON
@@ -366,7 +366,7 @@ class ReportUrlDetail(BaseModel):
     url_id: str
     result_type: ReportResultType
     analysis: dict
-    # Echoes structured_data.json if present — the diff payload the AI saw.
+    # Echoes structured_data.json if present - the diff payload the AI saw.
     structured_data: dict | None = None
     # Which screenshot kinds exist on disk (the SCREENSHOT route returns
     # the bytes; this lets the UI know which `which=` values to request).

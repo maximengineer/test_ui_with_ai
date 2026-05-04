@@ -7,7 +7,7 @@ separate `except BaseException` block with `status="failed"`.
 
 Without coverage, a future regression that swaps the except-order (which
 matters: KeyboardInterrupt IS a BaseException) silently maps Ctrl-C to
-"failed" — losing the operator-vs-system distinction that B.2 lock-recovery
+"failed" - losing the operator-vs-system distinction that B.2 lock-recovery
 will rely on.
 
 These tests drive the crawler with a `save_assets` that raises the
@@ -94,7 +94,7 @@ async def test_crawler_runtime_exception_writes_failed_status(
     main() loop and only logged. To force the outer except to fire, we
     patch `complete_manifest` so it raises. After the post-B.3 cleanup, the
     crawler's lifecycle is owned by `common.run_context`, which imported
-    `complete_manifest` from `common.manifest` at module-load time —
+    `complete_manifest` from `common.manifest` at module-load time -
     `RunContext.complete()` calls the imported reference, so we patch
     where `run_context` actually looks it up (NOT on the source manifest
     module).

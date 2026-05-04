@@ -1,34 +1,34 @@
 """SQLite layer for the dashboard (Phase C.1).
 
 Single-file SQLite database at `settings.runs_db_path` (default
-`data/dashboard.db`). Uses **stdlib `sqlite3`** (sync) rather than aiosqlite —
+`data/dashboard.db`). Uses **stdlib `sqlite3`** (sync) rather than aiosqlite -
 FastAPI runs sync route handlers in a threadpool, the dashboard is local-first
 single-machine, and WAL mode + `busy_timeout` give us enough concurrency
 without the operational complexity of an async driver.
 
 **Database-level PRAGMAs** (set ONCE in `init_db()`, persist on disk):
-  - `journal_mode=WAL` — readers don't block the writer. Stored in the
+  - `journal_mode=WAL` - readers don't block the writer. Stored in the
     DB header; subsequent connections inherit it automatically.
-  - `synchronous=NORMAL` — paired with WAL: durable across crashes,
+  - `synchronous=NORMAL` - paired with WAL: durable across crashes,
     not durable across full power loss. Acceptable for a dev tool.
 
 **Per-connection PRAGMAs** (set in every `connect()` call, NOT persisted):
-  - `busy_timeout=5000` — wait up to 5s rather than failing immediately
+  - `busy_timeout=5000` - wait up to 5s rather than failing immediately
     when another connection holds the write lock.
-  - `foreign_keys=ON` — SQLite default is OFF *per connection*; we want
+  - `foreign_keys=ON` - SQLite default is OFF *per connection*; we want
     FK enforcement if any future migration adds them.
 
 The split matters: a future maintainer who deletes the WAL line in
 `init_db` would silently regress to rollback-journal mode, but the
 test pinning `journal_mode=='wal'` would catch it. Conversely, dropping
 the per-connection `busy_timeout` would cause sporadic SQLITE_BUSY
-failures under load — also caught by `test_pragmas_applied_per_connection`.
+failures under load - also caught by `test_pragmas_applied_per_connection`.
 
 **Migrations:** `PRAGMA user_version`-driven. `MIGRATIONS` is an ordered
 list of callables `(conn) -> None`; running `apply_migrations(conn)` brings
 the schema from `user_version=N` to `len(MIGRATIONS)`. Each migration is
 idempotent within its own version (uses `CREATE TABLE IF NOT EXISTS` etc.)
-so partial application during a crash is recoverable. No Alembic — overkill
+so partial application during a crash is recoverable. No Alembic - overkill
 for one schema file.
 
 **Why no ORM:** the schema has one table (`runs`). SQLAlchemy's value
@@ -46,7 +46,7 @@ from pathlib import Path
 from typing import Callable, Iterator
 
 
-# Mirrors `Manifest.Kind` (test_ui/common/manifest.py) — keeping these in
+# Mirrors `Manifest.Kind` (test_ui/common/manifest.py) - keeping these in
 # sync is enforced by `test_dashboard_db.py::test_run_kinds_match_manifest`.
 RUN_KINDS_TUPLE: tuple[str, ...] = ("baseline", "current", "comparator", "report")
 
@@ -97,13 +97,13 @@ def _quote_compile_time_literals(values: tuple[str, ...]) -> str:
 # IMPORTANT for migration authors: do NOT use `conn.executescript()` here.
 # executescript() implicitly issues a COMMIT before running its body, which
 # would cancel the explicit BEGIN that `apply_migrations` wraps each migration
-# in — leaving the user_version bump outside any transaction. Use one
+# in - leaving the user_version bump outside any transaction. Use one
 # `conn.execute(...)` per statement instead.
 def _migration_001_initial(conn: sqlite3.Connection) -> None:
     """Initial schema: the `runs` table + its indexes.
 
     `args_json` and `command_json` are stored as TEXT (JSON-serialized)
-    rather than as separate columns because they're opaque to the DB —
+    rather than as separate columns because they're opaque to the DB -
     we never WHERE / GROUP BY their contents. JSON1 functions can be
     added later if a query genuinely needs to introspect them.
 
@@ -142,14 +142,14 @@ def _migration_001_initial(conn: sqlite3.Connection) -> None:
     )
 
 
-# Ordered list. Append-only — never reorder, never delete.
+# Ordered list. Append-only - never reorder, never delete.
 # `apply_migrations` runs each callable whose 1-based index > current user_version.
 MIGRATIONS: list[Callable[[sqlite3.Connection], None]] = [
     _migration_001_initial,
 ]
 
 
-# TODO(retention): the `runs` table grows monotonically — a year of
+# TODO(retention): the `runs` table grows monotonically - a year of
 # daily runs (4 kinds) is ~1460 rows + ~1460 on-disk dirs of multi-MB
 # artifacts. Pre-MVP, no automatic pruning ships. When operators start
 # hitting disk-pressure issues, add either:
@@ -157,7 +157,7 @@ MIGRATIONS: list[Callable[[sqlite3.Connection], None]] = [
 #       background task with matching on-disk `data/<kind>/<date>/<run_id>/`
 #       cleanup, OR
 #   (b) a `POST /api/runs/prune?older_than=<days>` route the operator
-#       triggers on demand (safer — no surprise data loss).
+#       triggers on demand (safer - no surprise data loss).
 # The Run row's `source` column distinguishes dashboard-spawned vs.
 # discovered runs, so the policy can differ (e.g. only prune `dashboard`
 # rows, leave `discovered` alone).
@@ -165,13 +165,13 @@ MIGRATIONS: list[Callable[[sqlite3.Connection], None]] = [
 
 def connect(db_path: Path) -> sqlite3.Connection:
     """Open a connection. Per-connection PRAGMAs are applied; database-level
-    PRAGMAs (WAL, synchronous) are NOT — those are set once in `init_db`.
+    PRAGMAs (WAL, synchronous) are NOT - those are set once in `init_db`.
 
     Caller is responsible for closing. Use `connection_scope()` for the
-    common request-scoped pattern. Each call opens a fresh connection —
+    common request-scoped pattern. Each call opens a fresh connection -
     SQLite handles the contention via WAL + `busy_timeout`.
 
-    Does NOT mkdir the parent — `init_db` does that once at startup. A
+    Does NOT mkdir the parent - `init_db` does that once at startup. A
     `connect()` call against a path whose parent doesn't exist will raise
     `sqlite3.OperationalError`, which is the right behavior: it surfaces
     a config bug instead of silently creating directory debris in the
@@ -190,7 +190,7 @@ def connect(db_path: Path) -> sqlite3.Connection:
         check_same_thread=False,
     )
     conn.row_factory = sqlite3.Row
-    # `busy_timeout` and `foreign_keys` are per-connection in SQLite — they
+    # `busy_timeout` and `foreign_keys` are per-connection in SQLite - they
     # MUST be set on every fresh connection or they revert to the (bad)
     # defaults: SQLITE_BUSY immediate failure and FK enforcement off.
     conn.execute("PRAGMA busy_timeout=5000")
@@ -216,7 +216,7 @@ def get_user_version(conn: sqlite3.Connection) -> int:
 
 def set_user_version(conn: sqlite3.Connection, version: int) -> None:
     """Write the schema version. Inlined into the SQL because PRAGMAs don't
-    accept bound parameters in SQLite. Safe — `version` is an int we control."""
+    accept bound parameters in SQLite. Safe - `version` is an int we control."""
     if not isinstance(version, int) or version < 0:
         raise ValueError(f"version must be a non-negative int, got {version!r}")
     conn.execute(f"PRAGMA user_version = {version}")
@@ -234,7 +234,7 @@ def apply_migrations(conn: sqlite3.Connection) -> int:
     target = len(MIGRATIONS)
     if current > target:
         # The DB was written by a newer codebase. Don't pretend we know what
-        # to do — fail loudly so the operator notices the version mismatch.
+        # to do - fail loudly so the operator notices the version mismatch.
         raise RuntimeError(
             f"DB user_version={current} is ahead of code (max={target}). "
             f"Downgrade the DB or upgrade the codebase."
@@ -258,10 +258,10 @@ def init_db(db_path: Path) -> None:
 
     Creates the parent directory (one-time, at startup) so the operator
     doesn't have to mkdir `data/` themselves. After this point, `connect()`
-    refuses to materialize directories — see its docstring for why.
+    refuses to materialize directories - see its docstring for why.
 
     Database-level PRAGMAs (`journal_mode`, `synchronous`) are set here
-    rather than in `connect` because they're persisted in the DB header —
+    rather than in `connect` because they're persisted in the DB header -
     setting them on every connection would be redundant work, and the
     `journal_mode=WAL` switch can silently fail if there's an active
     transaction on another connection. Doing it once at startup, before
@@ -270,7 +270,7 @@ def init_db(db_path: Path) -> None:
     db_path.parent.mkdir(parents=True, exist_ok=True)
     with connection_scope(db_path) as conn:
         # `journal_mode` returns the active mode (or the new mode on success).
-        # We assert success rather than trust it — a misconfigured filesystem
+        # We assert success rather than trust it - a misconfigured filesystem
         # (e.g. NFS without mandatory locking) silently keeps the DB in
         # rollback-journal mode, and we'd rather know at startup than under
         # concurrent load.
@@ -285,7 +285,7 @@ def init_db(db_path: Path) -> None:
 
 
 # --------------------------------------------------------------------------- #
-# Row helpers — keep SQL out of route handlers.                              #
+# Row helpers - keep SQL out of route handlers.                              #
 # --------------------------------------------------------------------------- #
 
 
@@ -301,11 +301,11 @@ def insert_discovered_run(
     date_dir: str | None,
 ) -> int | None:
     """INSERT a `source='discovered'` row. Returns the new id, or None on
-    UNIQUE conflict (run_id already known — caller should treat as "already
+    UNIQUE conflict (run_id already known - caller should treat as "already
     synced" rather than as an error).
 
     Discovered rows have empty args/command JSON because they were never
-    spawned by the dashboard — the actual command lives in the manifest's
+    spawned by the dashboard - the actual command lives in the manifest's
     on-disk run record (`data/runs/<run_id>.run.json`) if it exists.
     """
     try:
@@ -330,7 +330,7 @@ def insert_discovered_run(
         )
         return int(cursor.lastrowid) if cursor.lastrowid else None
     except sqlite3.IntegrityError as e:
-        # Duplicate run_id — already in the table from a prior sync or from
+        # Duplicate run_id - already in the table from a prior sync or from
         # the dashboard itself. Not an error; just skip.
         if "UNIQUE constraint failed: runs.run_id" in str(e):
             return None
@@ -348,7 +348,7 @@ def list_runs(
 ) -> tuple[list[sqlite3.Row], int]:
     """Return (rows, total). `total` counts the filtered set, not the page.
 
-    `date_dir` filters to a specific DD-MM-YYYY string — added so the
+    `date_dir` filters to a specific DD-MM-YYYY string - added so the
     Reports page can request `?kind=report&date_dir=01-01-2099` and get
     every report run for that date in one query, without the 500-row
     client-side filter that round-1 review caught (CRITICAL #1).
@@ -400,7 +400,7 @@ def insert_pending_run(
 
     Pending = "row exists, subprocess not yet spawned". The runner spawns,
     then race-safely promotes to `running` via `mark_running`. Both halves
-    must be paired — a row left in `pending` after process-startup failure
+    must be paired - a row left in `pending` after process-startup failure
     is a bug (the runner should mark it `failed` instead).
 
     `command` is the full argv that WILL be exec'd (including `python`);
@@ -425,7 +425,7 @@ def insert_pending_run(
             source,
         ),
     )
-    if cursor.lastrowid is None:  # pragma: no cover — sqlite always sets it
+    if cursor.lastrowid is None:  # pragma: no cover - sqlite always sets it
         raise RuntimeError("INSERT succeeded but lastrowid is None")
     return int(cursor.lastrowid)
 
@@ -450,7 +450,7 @@ def mark_running(
 
     `pid_start_time` may be None on platforms where /proc isn't readable
     (macOS); restart-recovery then falls back to "trust the PGID is ours
-    if it's still alive" — a weaker guarantee but acceptable on dev
+    if it's still alive" - a weaker guarantee but acceptable on dev
     machines, which is the only place macOS hits this code.
     """
     cursor = conn.execute(
@@ -484,7 +484,7 @@ def mark_terminal(
     """Set the terminal status. Race-safe: refuses to overwrite an existing
     terminal status. Returns True iff the row was updated.
 
-    `status` MUST be one of `_TERMINAL_STATUSES` — enforced here rather
+    `status` MUST be one of `_TERMINAL_STATUSES` - enforced here rather
     than relying on the CHECK constraint to surface the bug at the
     Python level (clearer traceback than an IntegrityError).
     """
@@ -508,7 +508,7 @@ def find_active_runs(conn: sqlite3.Connection) -> list[sqlite3.Row]:
     """Return rows in `pending` or `running` state.
 
     Used at startup to identify orphaned runs from the previous dashboard
-    instance — `_watch` tasks die when the process exits, so any row left
+    instance - `_watch` tasks die when the process exits, so any row left
     non-terminal at startup was either (a) abandoned by a crash or (b)
     abandoned by a clean shutdown that didn't wait for the subprocess.
     Recovery treats both the same way: PGID-verify, kill if ours, mark

@@ -1,7 +1,7 @@
 """Cross-URL aggregation + confidence metrics (Phase A.3 split).
 
 Pure functions over the per-URL results loader produces. No I/O. Routes by the
-`result_type` discriminator from the contract (Phase A.1.8) — was previously
+`result_type` discriminator from the contract (Phase A.1.8) - was previously
 severity-based, which couldn't distinguish "AI was never called" (no_changes /
 ai_disabled) from "AI failed" (analysis_error). Legacy fallback paths retained
 for files persisted before A.1.8 (those don't carry result_type).
@@ -46,13 +46,13 @@ def aggregate_analyses(all_url_results: list[dict[str, Any]]) -> dict[str, Any]:
         elif result_type == "analysis_error":
             errors.append(result)
         elif result_type in ("no_changes", "ai_disabled"):
-            # Both mean "AI was not invoked for this URL" — bucket together
+            # Both mean "AI was not invoked for this URL" - bucket together
             # for aggregation. The HTML renderer can still distinguish them.
             no_changes.append(result)
         else:
             # Legacy fallback for files persisted before A.1.8.
             # Synthetic no-change records have analysis_type="no_changes_detected"
-            # AND severity="SAFE" — check analysis_type first or they'd be
+            # AND severity="SAFE" - check analysis_type first or they'd be
             # miscategorized as real SAFE analyses.
             if ai_analysis.get("analysis_type") == "no_changes_detected":
                 no_changes.append(result)
@@ -207,7 +207,7 @@ def generate_global_recommendations(
     # constrained to CRITICAL/WARNING/SAFE) and into a separate
     # AIAnalysisError variant identified by `result_type="analysis_error"`.
     # Counting by severity == "ERROR" was a pre-A.1.8 leftover that always
-    # returned 0 for current data — the process_improvements recommendation
+    # returned 0 for current data - the process_improvements recommendation
     # never fired. Match the discriminator-based logic in aggregate_analyses.
     error_count = sum(
         1

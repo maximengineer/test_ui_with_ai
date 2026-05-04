@@ -2,7 +2,7 @@
 
 Each run produces `data/<kind>/<date>/<run_id>/manifest.json` describing what
 was executed, when, by whom, and how it relates to upstream runs. This is the
-single source of truth for "is this run usable" — `compare` and `report` both
+single source of truth for "is this run usable" - `compare` and `report` both
 refuse to operate on runs whose manifest doesn't say `status="complete"`.
 
 The manifest is written twice:
@@ -15,7 +15,7 @@ Callers wrap their work in `try/except BaseException`, calling
 KeyboardInterrupt/SystemExit → `"interrupted"`, anything else → `"failed"`.
 A run whose manifest is still `"running"` after the process exits indicates
 a hard crash (SIGKILL, OOM kill, host reboot) where the exception handler
-never ran — the lock-file recovery logic in B.2 reaps those by checking
+never ran - the lock-file recovery logic in B.2 reaps those by checking
 process liveness.
 """
 
@@ -104,7 +104,7 @@ def complete_manifest(run_dir: Path, *, url_count: int) -> Manifest:
     this function with `from .manifest import complete_manifest`, which
     rebinds the name into their module's namespace at import time.
     Monkeypatching `manifest.complete_manifest` in a test does NOT affect
-    those callers — patch the caller's module instead (e.g. for
+    those callers - patch the caller's module instead (e.g. for
     `run_context`, `monkeypatch.setattr("test_ui.common.run_context.complete_manifest", ...)`).
     """
     manifest = read_manifest(run_dir)
@@ -137,7 +137,7 @@ def fail_manifest(
         for post-mortem.
 
     Returns the persisted Manifest, or None if we couldn't write anything.
-    Catches narrow I/O / parse exceptions only — unexpected errors propagate
+    Catches narrow I/O / parse exceptions only - unexpected errors propagate
     so the caller's exception handler still sees them.
     """
     manifest: Manifest | None = None
@@ -155,7 +155,7 @@ def fail_manifest(
                 corrupt_path.rename(backup)
             except OSError:
                 pass  # best-effort
-        # Don't return — fall through to write a fresh stub below.
+        # Don't return - fall through to write a fresh stub below.
         # Note `e` is intentionally not re-raised: the caller is already
         # handling the original failure that triggered us.
         del e
@@ -190,12 +190,12 @@ def compute_files_sha256(run_dir: Path) -> str:
     Excludes:
       - `manifest.json` itself (chicken-and-egg)
       - `manifest.json.corrupt-<ts>` backups left by `fail_manifest` when the
-        prior manifest was unreadable — these are debug debris, not run output
+        prior manifest was unreadable - these are debug debris, not run output
       - `.lock` files (cleaned up before publish, but defensive)
       - `.tmp-*` workspace dirs
 
     The hash detects post-publication tampering / partial writes without
-    having to re-hash large image bytes — size + path is enough for a
+    having to re-hash large image bytes - size + path is enough for a
     manifest-level integrity check. The Pydantic `files_sha256` field stores
     just the digest hex.
     """

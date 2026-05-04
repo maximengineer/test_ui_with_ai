@@ -1,5 +1,5 @@
 {
   "schema": "ai_disabled",
   "valid": true,
-  "note": "AIDisabledMarker — AFR_AI_ENABLED=false skipped the AI call. Phase A.1.9 marker. Same shape as no_changes but distinct discriminator so consumers don't conflate the two."
+  "note": "AIDisabledMarker - AFR_AI_ENABLED=false skipped the AI call. Phase A.1.9 marker. Same shape as no_changes but distinct discriminator so consumers don't conflate the two."
 }

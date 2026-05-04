@@ -147,9 +147,9 @@ export function RunsPage() {
                     <td className="px-4 py-2">
                       <StatusPill status={row.status} />
                     </td>
-                    <td className="px-4 py-2 text-slate-600">{row.date_dir ?? '—'}</td>
+                    <td className="px-4 py-2 text-slate-600">{row.date_dir ?? '-'}</td>
                     <td className="px-4 py-2 text-slate-600">
-                      {row.started_at ?? '—'}
+                      {row.started_at ?? '-'}
                     </td>
                     <td className="px-4 py-2 font-mono text-xs text-slate-500">
                       {row.run_id}
@@ -181,7 +181,7 @@ export function RunsPage() {
 }
 
 // --------------------------------------------------------------------------
-// Sub-components — kept inline because they're page-private and small.
+// Sub-components - kept inline because they're page-private and small.
 // --------------------------------------------------------------------------
 
 function SpawnButton({

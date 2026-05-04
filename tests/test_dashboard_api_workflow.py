@@ -3,18 +3,18 @@
 Drives the FastAPI TestClient through the FULL operator workflow,
 simulating what the React UI would do click-by-click:
 
-  1. POST /api/sites               — operator adds a site
-  2. POST /api/runs (baseline)     — kicks off a baseline crawl
-  3. GET  /api/runs/{db_id}        — polls status (mocked subprocess
+  1. POST /api/sites               - operator adds a site
+  2. POST /api/runs (baseline)     - kicks off a baseline crawl
+  3. GET  /api/runs/{db_id}        - polls status (mocked subprocess
                                      completes immediately with done)
-  4. POST /api/runs (current)      — kicks off a current crawl
-  5. POST /api/runs (comparator)   — diff baseline vs current
-  6. POST /api/runs (report)       — produce the AI-narrated report
-  7. GET  /api/dates               — confirm new dates are visible
-  8. GET  /api/runs?kind=report    — confirm the report run is listed
-  9. GET  /api/reports/{date}/{run_id}/urls   — list URLs in the report
- 10. GET  /api/reports/{date}/{run_id}/url?id=...  — drill into one URL
- 11. GET  /api/reports/{date}/{run_id}/screenshot  — fetch a screenshot
+  4. POST /api/runs (current)      - kicks off a current crawl
+  5. POST /api/runs (comparator)   - diff baseline vs current
+  6. POST /api/runs (report)       - produce the AI-narrated report
+  7. GET  /api/dates               - confirm new dates are visible
+  8. GET  /api/runs?kind=report    - confirm the report run is listed
+  9. GET  /api/reports/{date}/{run_id}/urls   - list URLs in the report
+ 10. GET  /api/reports/{date}/{run_id}/url?id=...  - drill into one URL
+ 11. GET  /api/reports/{date}/{run_id}/screenshot  - fetch a screenshot
 
 The actual subprocess work (crawling, comparing, AI analysis) is
 mocked: `runner.spawn_run` is replaced with a fake that immediately
@@ -24,7 +24,7 @@ for the report kind). That gives the downstream routes real data to
 operate on without spending minutes per test on real Playwright
 crawls.
 
-Catches API-level wiring breakage between routes — the kind of bug
+Catches API-level wiring breakage between routes - the kind of bug
 where a backend rename makes the frontend's chained calls break
 silently because no single-route test exercises the chain.
 """
@@ -46,7 +46,7 @@ from test_ui.common.manifest import Manifest, write_manifest
 from test_ui.config import settings
 
 
-# 1×1 transparent PNG — smallest valid PNG bytes. Used for fake
+# 1×1 transparent PNG - smallest valid PNG bytes. Used for fake
 # screenshots in the report run dir.
 _PNG_1X1 = bytes.fromhex(
     "89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4"
@@ -124,7 +124,7 @@ def e2e_env(tmp_path, monkeypatch):
       (b) materializes the kind-specific on-disk artifacts the next
           stage of the workflow expects to find, then
       (c) marks the row `done`.
-    All synchronously inside the route — no race for the test to wait on.
+    All synchronously inside the route - no race for the test to wait on.
     """
     db_path = _wire_settings(tmp_path, monkeypatch)
 
@@ -167,7 +167,7 @@ def e2e_env(tmp_path, monkeypatch):
                 finished_at=settings.get_current_datetime(),
                 exit_code=0,
             )
-        # Sentinel — the route doesn't await it.
+        # Sentinel - the route doesn't await it.
         from unittest.mock import MagicMock
 
         return MagicMock(pid=99999)
@@ -222,7 +222,7 @@ def test_full_operator_workflow_end_to_end(e2e_env):
         assert baseline["status"] == "running"
         baseline_db_id = baseline["db_id"]
 
-        # === 3. Poll status — fake_spawn already marked it done ======
+        # === 3. Poll status - fake_spawn already marked it done ======
         r = c.get(f"/api/runs/{baseline_db_id}")
         assert r.status_code == 200
         row = r.json()
@@ -306,7 +306,7 @@ def test_full_operator_workflow_end_to_end(e2e_env):
 def test_idempotency_409_during_workflow(e2e_env):
     """Spawning the same kind+date twice while the first is still running
     yields 409. The fake_spawn here marks `done` immediately, so we
-    can't easily catch a `running` state — instead we monkeypatch to
+    can't easily catch a `running` state - instead we monkeypatch to
     leave the row pending so the second POST has something to conflict
     with.
 

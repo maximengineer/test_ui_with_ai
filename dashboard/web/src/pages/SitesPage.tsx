@@ -3,7 +3,7 @@
  *
  * Layout: a top "add" form (always visible), then the table. Each row
  * has inline edit (toggles to a 2-input form) + delete (with a JS
- * confirm — keeping the MVP simple; a confirm modal would be easy to
+ * confirm - keeping the MVP simple; a confirm modal would be easy to
  * add later if the operator-friction outweighs the click).
  *
  * The id is server-generated from the slugified name, so the create form
@@ -126,7 +126,7 @@ export function SitesPage() {
                   //     state from new props. Round-2 #M9 fix.
                   //   - When editing THIS row, drop name+url from the
                   //     key so an in-flight remote update doesn't wipe
-                  //     the user's mid-typing input. Round-3 #M1 fix —
+                  //     the user's mid-typing input. Round-3 #M1 fix -
                   //     the M9 fix was correct for stale-edit prevention
                   //     but introduced a worse bug where the user's
                   //     own typing could vanish if a refetch landed
@@ -152,7 +152,7 @@ export function SitesPage() {
 }
 
 // --------------------------------------------------------------------------
-// SiteRow — renders either a static row or an inline edit form.
+// SiteRow - renders either a static row or an inline edit form.
 // --------------------------------------------------------------------------
 
 function SiteRow({

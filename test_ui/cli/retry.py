@@ -1,4 +1,4 @@
-"""`retry-url` Click command — single-URL retry of a previously-failed AI run.
+"""`retry-url` Click command - single-URL retry of a previously-failed AI run.
 
 Split out of `commands.py` because it accounts for ~150 LOC of the 444-line
 file (38%) and has a meaningfully distinct shape from the other commands
@@ -8,7 +8,7 @@ so it has its own ergonomic concerns (stable id semantics, friendly error
 messages) that aren't shared with the rest of the CLI.
 
 Registered against the same `cli` group via the standard Click decorator
-trick — importing this module attaches the command to the group.
+trick - importing this module attaches the command to the group.
 """
 
 from __future__ import annotations
@@ -86,12 +86,12 @@ def retry_url(ctx, date, url, comparator_data):
     if not diffs_dir.exists():
         console.print(
             f"[red]❌ No diffs directory at {diffs_dir} "
-            "(comparator detected no changes for this URL — nothing to analyze).[/red]"
+            "(comparator detected no changes for this URL - nothing to analyze).[/red]"
         )
         raise click.Abort()
 
     # Pull comparison_results.json so the screenshot loader can find baseline
-    # and current paths from the recorded metadata. Optional — falls back to
+    # and current paths from the recorded metadata. Optional - falls back to
     # diffs/visual_diff.png if missing.
     comparison_file = url_dir / "comparison_results.json"
     comparison_data = None

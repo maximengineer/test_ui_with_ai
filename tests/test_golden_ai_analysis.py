@@ -5,7 +5,7 @@ Pins the byte-for-byte content of an `ai_analysis.json` file produced by
 mocked AI response. Volatile fields (`request_id`, timestamps, screenshot
 paths) are normalized before compare.
 
-If A.3's refactor changes the output shape, this test fails — and that's the
+If A.3's refactor changes the output shape, this test fails - and that's the
 signal to either:
   - update the test to reflect intentional new behavior, OR
   - run `pytest --update-golden` to accept the new output.
@@ -136,7 +136,7 @@ async def test_golden_ai_analysis_success_shape(
         mock.post("/api/compare").mock(side_effect=_handler)
 
         # Phase B.1: process_single_url now takes a `run_root` instead of
-        # `date` — tests construct one explicitly so assertions can find it
+        # `date` - tests construct one explicitly so assertions can find it
         # at a stable path (no ULID resolution).
         run_root = isolated_data_dirs["report"] / date / "test-run"
         run_root.mkdir(parents=True)

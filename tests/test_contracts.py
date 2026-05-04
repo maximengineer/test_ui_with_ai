@@ -47,7 +47,7 @@ def test_example_fixtures_match_structured_data_shape(example_diffs_dir):
 
     If this fails after a comparator change, either tighten the contract or
     update the fixtures. Don't widen the contract to `dict[str, Any]` to make
-    this pass — that defeats the point of having a contract.
+    this pass - that defeats the point of having a contract.
     """
     sd = _load_structured_data(example_diffs_dir)
     assert sd.html_changes.summary["total_changes"] == 5

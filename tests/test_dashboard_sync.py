@@ -106,7 +106,7 @@ def test_sync_maps_complete_to_done(sync_env):
 
 @pytest.mark.parametrize("manifest_status", ["failed", "interrupted", "running"])
 def test_sync_passes_through_non_complete_statuses(sync_env, manifest_status):
-    """`failed`, `interrupted`, `running` are already in our vocabulary —
+    """`failed`, `interrupted`, `running` are already in our vocabulary -
     must be stored verbatim, not coerced."""
     _seed_manifest(
         settings.baseline_dir,
@@ -134,9 +134,9 @@ def test_sync_skips_corrupt_manifest_without_aborting(sync_env, tmp_path):
 
 
 def test_sync_handles_missing_kind_root(sync_env):
-    """If `comparator/` doesn't exist on disk, sync just skips that kind —
+    """If `comparator/` doesn't exist on disk, sync just skips that kind -
     no error. (Common case: operator hasn't run any comparators yet.)"""
-    # No setup at all — the `sync_env` fixture creates the DB but no kind dirs.
+    # No setup at all - the `sync_env` fixture creates the DB but no kind dirs.
     scanned, inserted = sync_runs(sync_env)
     assert (scanned, inserted) == (0, 0)
 

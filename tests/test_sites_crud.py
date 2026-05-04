@@ -1,4 +1,4 @@
-"""Sites CRUD helpers (Phase C.2 — dashboard slice).
+"""Sites CRUD helpers (Phase C.2 - dashboard slice).
 
 Pin the round-trip behavior: comments preserved, atomic writes, dedup
 on slugified ids, validation via Pydantic before the file is touched.
@@ -71,7 +71,7 @@ def test_add_site_preserves_comments(tmp_path):
 
 def test_add_site_handles_empty_file(tmp_path):
     """A file with no `sites:` key (or `sites:` empty) must still accept
-    adds — the loader synthesizes the list."""
+    adds - the loader synthesizes the list."""
     p = _seed(tmp_path, "")
     new = add_site(p, name="First", url="https://first.example")
     assert new.id == "first"
@@ -80,7 +80,7 @@ def test_add_site_handles_empty_file(tmp_path):
 
 
 def test_add_site_rejects_empty_url(tmp_path):
-    """Pydantic catches this BEFORE the file is touched — a `min_length=1`
+    """Pydantic catches this BEFORE the file is touched - a `min_length=1`
     on Site.url is the line of defense."""
     p = _seed(tmp_path, "sites: []\n")
     with pytest.raises(ValidationError):
@@ -182,7 +182,7 @@ def test_update_site_both_fields(tmp_path):
 
 def test_update_site_no_op_when_both_none_does_not_rewrite(tmp_path):
     """Both fields None → return current row, no file rewrite. Round-2
-    review HIGH #5 dropped the misleading "fast path" — the regular
+    review HIGH #5 dropped the misleading "fast path" - the regular
     branch now correctly skips the write when nothing changed."""
     p = _seed(
         tmp_path,
@@ -197,7 +197,7 @@ def test_update_site_no_op_when_both_none_does_not_rewrite(tmp_path):
 
 def test_update_site_no_op_when_values_unchanged(tmp_path):
     """Passing the SAME name+url that already exists must also skip
-    the rewrite — pin the value-comparison short-circuit."""
+    the rewrite - pin the value-comparison short-circuit."""
     p = _seed(
         tmp_path,
         "sites:\n  - id: a\n    name: A\n    url: https://a.example\n",
@@ -249,7 +249,7 @@ def test_delete_site_404_when_id_unknown(tmp_path):
 
 
 def test_delete_site_preserves_comments(tmp_path):
-    """Like add — operator comments must survive."""
+    """Like add - operator comments must survive."""
     p = _seed(
         tmp_path,
         "# important note\nsites:\n  - id: a\n    name: A\n    url: https://a.example\n  - id: b\n    name: B\n    url: https://b.example\n",
@@ -273,7 +273,7 @@ def test_delete_site_rolls_back_when_resulting_file_unloadable(tmp_path):
     original = p.read_text(encoding="utf-8")
     with pytest.raises(ValidationError):
         delete_site(p, "a")
-    # Original bytes restored — the corrupt entry is still there but at
+    # Original bytes restored - the corrupt entry is still there but at
     # least the operator hasn't lost the entry they tried to delete.
     assert p.read_text(encoding="utf-8") == original
 
@@ -282,7 +282,7 @@ def test_add_site_rollback_is_atomic(tmp_path, monkeypatch):
     """Round-3 review #M4 fix: rollback uses tmp+rename so a crash mid-
     rollback can't leave the file half-overwritten. We force the tmp+
     rename rollback path to fail at `tmp.replace`; the file should
-    either be the original or the post-write state — never empty."""
+    either be the original or the post-write state - never empty."""
     p = _seed(
         tmp_path,
         "sites:\n  - id: BadCaseID\n    name: X\n    url: https://x.example\n",
@@ -303,7 +303,7 @@ def test_add_site_rollback_is_atomic(tmp_path, monkeypatch):
     with pytest.raises(OSError, match="simulated rollback"):
         add_site(p, name="New", url="https://new.example")
 
-    # The file is in the post-write (corrupt) state — NOT empty / truncated.
+    # The file is in the post-write (corrupt) state - NOT empty / truncated.
     # That's the atomicity guarantee: rollback either fully succeeds or
     # leaves the post-write state intact, never an interrupted-write blob.
     final = p.read_text(encoding="utf-8")
@@ -312,4 +312,4 @@ def test_add_site_rollback_is_atomic(tmp_path, monkeypatch):
     assert not (tmp_path / "sites.yml.rollback").exists()
     # Original is recoverable from the operator's git history; we don't
     # need to assert the exact content, just that the file isn't empty.
-    del original  # acknowledged unused — kept as documentation
+    del original  # acknowledged unused - kept as documentation

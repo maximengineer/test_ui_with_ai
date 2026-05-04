@@ -3,7 +3,7 @@
  *
  * Uses React Router's `<Outlet>` to render the active page. The sidebar
  * is sticky on tall viewports and collapses gracefully on narrow ones
- * (operator-targeted tool — no mobile-first design needed, just legible).
+ * (operator-targeted tool - no mobile-first design needed, just legible).
  */
 import { NavLink, Outlet } from 'react-router-dom'
 

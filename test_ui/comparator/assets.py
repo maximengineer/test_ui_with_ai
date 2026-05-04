@@ -1,6 +1,6 @@
 """Asset (CSS/JS/media) diffing for the comparator (Phase A.3 split).
 
-Pure functions extracted from comparator/engine.py — no class state.
+Pure functions extracted from comparator/engine.py - no class state.
 Behavior preserved verbatim so the A.2 comparator goldens keep passing.
 
 Public API:
@@ -10,7 +10,7 @@ Public API:
 
 Implementation note: the per-rule CSS diff and per-function JS diff are
 intentionally shallow (regex-based, not AST). Per-selector / per-function
-detail is computed but not surfaced in the json files the AI consumes —
+detail is computed but not surfaced in the json files the AI consumes -
 those only show file-level changes. See docs/data_shapes.md for the
 "limitations" notes on this.
 """
@@ -65,7 +65,7 @@ def extract_js_functions(js_content: str) -> dict[str, str]:
     """Extract top-level function declarations + assigned anonymous functions.
 
     Doesn't handle arrow functions, async functions, or nested braces beyond
-    one level. Intentional — pre-A.3 behavior preserved.
+    one level. Intentional - pre-A.3 behavior preserved.
     """
     functions: dict[str, str] = {}
     patterns = (
@@ -111,7 +111,7 @@ def assess_css_impact(selector: str, properties: dict[str, str]) -> str:
 def analyze_css_content_changes(
     baseline_file: Path, current_file: Path, filename: str
 ) -> dict[str, Any]:
-    """Per-selector CSS diff. Currently informational — the json files the AI
+    """Per-selector CSS diff. Currently informational - the json files the AI
     sees only carry file-level CSS changes (see create_css_changes_json)."""
     try:
         baseline_content = baseline_file.read_text(encoding="utf-8")
@@ -208,7 +208,7 @@ def _format_rule(selector: str, props: dict[str, str]) -> str:
 def analyze_js_content_changes(
     baseline_file: Path, current_file: Path, filename: str
 ) -> dict[str, Any]:
-    """Per-function JS diff. Same caveat as CSS — file-level only at AI-output."""
+    """Per-function JS diff. Same caveat as CSS - file-level only at AI-output."""
     try:
         baseline_content = baseline_file.read_text(encoding="utf-8")
         current_content = current_file.read_text(encoding="utf-8")

@@ -117,7 +117,7 @@ test-existing-data:
 # === Dashboard (Phase C.1) ===
 
 # Host-native dev: uvicorn (--reload) + Vite dev server in parallel
-# via `concurrently` (devDep in dashboard/web). LINUX ONLY — see
+# via `concurrently` (devDep in dashboard/web). LINUX ONLY - see
 # `_require_linux` in dashboard/api/main.py. Mac/Windows operators
 # use `make dashboard-docker` instead.
 #

@@ -25,7 +25,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 # doesn't exist until Milestone C).
 SOURCE_DIRS = ["test_ui", "scripts", "dashboard"]
 
-# Files we never want to flag — generated, vendored, or by-design references.
+# Files we never want to flag - generated, vendored, or by-design references.
 EXCLUDE = {
     REPO_ROOT / "scripts" / "audit_paths.py",  # this file
     REPO_ROOT / "test_ui" / "config.py",  # canonical defaults live here
@@ -68,7 +68,7 @@ def main() -> int:
         print("audit_paths: clean (no hardcoded data/ paths in source).")
         return 0
 
-    print(f"audit_paths: {len(hits)} hit(s) — replace with settings.<path>:")
+    print(f"audit_paths: {len(hits)} hit(s) - replace with settings.<path>:")
     for path, line_no, snippet in hits:
         rel = path.relative_to(REPO_ROOT)
         print(f"  {rel}:{line_no}: {snippet}")

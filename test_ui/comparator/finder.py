@@ -1,4 +1,4 @@
-"""Date + run-id directory discovery (Phase B.1.4 — extends Phase A.3 split).
+"""Date + run-id directory discovery (Phase B.1.4 - extends Phase A.3 split).
 
 Pure functions for resolving "the latest baseline / current / comparator /
 report directory I should read from."
@@ -14,12 +14,12 @@ date directory, then:
   1. If a `latest` symlink under that date dir resolves to a real subdir,
      return its target. (Fast path; the crawler updates the symlink at
      publish time.)
-  2. Else, scan for ULID-named children — the new run-id subdirs. Sort
+  2. Else, scan for ULID-named children - the new run-id subdirs. Sort
      descending (ULIDs are time-sortable), then walk newest→oldest until we
      find one whose `manifest.json` says ``status="complete"``.
   3. Else, treat the date dir itself as the data root (legacy layout).
 
-Callers don't need to know which path was taken — they always treat the
+Callers don't need to know which path was taken - they always treat the
 returned `Path` as "the directory containing per-URL subdirectories."
 """
 
@@ -101,7 +101,7 @@ def _is_complete_run(run_dir: Path) -> bool:
 
     Missing manifest is the common case for in-progress / interrupted runs
     and is silently False. A manifest that exists but fails to parse is
-    logged at WARNING — that's a corruption signal worth surfacing.
+    logged at WARNING - that's a corruption signal worth surfacing.
     """
     try:
         from ..common.manifest import read_manifest
@@ -140,7 +140,7 @@ def find_latest_run_dir_in_date(date_dir: Path) -> Path | None:
             if target.is_dir():
                 return target
         except (OSError, RuntimeError):
-            # Dangling symlink or symlink loop — fall through to the scan.
+            # Dangling symlink or symlink loop - fall through to the scan.
             pass
 
     # Slow path: scan for ULID subdirs, sort by id (ULIDs encode time so
@@ -155,7 +155,7 @@ def find_latest_run_dir_in_date(date_dir: Path) -> Path | None:
         for run_dir in run_dirs:
             if _is_complete_run(run_dir):
                 return run_dir
-        # No complete run found — caller almost certainly doesn't want a
+        # No complete run found - caller almost certainly doesn't want a
         # half-finished one. Return None and let them complain.
         return None
 
@@ -188,7 +188,7 @@ def update_latest_symlink(date_dir: Path, run_id: str) -> None:
     Atomic via the os.symlink → os.replace pattern: write a temp symlink
     next to it, then rename onto the existing one. POSIX rename(2) is
     atomic for symlinks too. If the platform lacks symlink support
-    (Windows without dev-mode), silently no-op — readers fall back to
+    (Windows without dev-mode), silently no-op - readers fall back to
     scanning, which is slower but correct.
     """
     target = date_dir / run_id
@@ -204,7 +204,7 @@ def update_latest_symlink(date_dir: Path, run_id: str) -> None:
         tmp_link.replace(link)
     except (OSError, NotImplementedError):
         # Windows without developer mode raises OSError. Caller's job
-        # continues fine — readers will scan for the latest ULID instead.
+        # continues fine - readers will scan for the latest ULID instead.
         if tmp_link.exists() or tmp_link.is_symlink():
             try:
                 tmp_link.unlink()

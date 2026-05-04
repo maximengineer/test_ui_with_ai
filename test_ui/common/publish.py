@@ -2,7 +2,7 @@
 
 A run writes everything into `<date>/.tmp-<run_id>/` while in progress.
 Only on clean completion does it rename to `<date>/<run_id>/`. Half-written
-runs are therefore never visible at their final path — `find_latest_*`
+runs are therefore never visible at their final path - `find_latest_*`
 walking `<date>/` sees only complete runs (modulo filtering out `.tmp-*` /
 `.lock` / `latest` symlink entries).
 
@@ -52,10 +52,10 @@ def atomic_run_dir(date_dir: Path, run_id: str) -> Iterator[Path]:
 
     if final.exists():
         # ULID collisions are statistically impossible (80-bit randomness),
-        # so this means a programming error — explicit reuse of a run_id.
+        # so this means a programming error - explicit reuse of a run_id.
         raise FileExistsError(f"run already published at {final}")
     if tmp.exists():
-        # Same logic — a previous run with this id either crashed or we're
+        # Same logic - a previous run with this id either crashed or we're
         # being asked to use a duplicate id. Refuse rather than overwrite.
         raise FileExistsError(f"in-progress run dir already exists at {tmp}")
 

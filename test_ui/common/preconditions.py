@@ -2,12 +2,12 @@
 
 Three guards a user-facing command can apply before doing real work:
 
-  1. `require_complete_run(kind_root, date, kind)` — verifies the latest
+  1. `require_complete_run(kind_root, date, kind)` - verifies the latest
      run for the given (kind, date) has `manifest.status == "complete"`.
      Used by `compare` (needs complete baseline + current) and
      `enhanced-report` (needs complete comparator).
 
-  2. `require_no_live_lock(date_dir)` — refuses to start if a sibling
+  2. `require_no_live_lock(date_dir)` - refuses to start if a sibling
      `.tmp-*/.lock` belongs to a process that's still alive. Used by
      `snapshot` and `current` to prevent two crawls clobbering the same
      kind+date concurrently.
@@ -41,7 +41,7 @@ def require_complete_run(kind_root: Path, date: str, *, kind_label: str) -> Path
          than a generic "no complete run".
 
     `kind_label` is the human-readable name of what we're checking (e.g.
-    "baseline", "current", "comparator") — used only for the error message.
+    "baseline", "current", "comparator") - used only for the error message.
     """
     # Imports local to dodge a potential circular (this module is imported
     # by cli.py, which itself pulls in comparator.finder via the Orchestrator).
@@ -65,7 +65,7 @@ def require_complete_run(kind_root: Path, date: str, *, kind_label: str) -> Path
     )
 
     if not ulid_dirs:
-        # Legacy layout — no run_ids at all. Trust the date dir directly so
+        # Legacy layout - no run_ids at all. Trust the date dir directly so
         # the migration grace period works. Operators on the new layout
         # always have at least one ULID subdir (even if it's failed).
         return date_dir
@@ -105,12 +105,12 @@ def require_complete_run(kind_root: Path, date: str, *, kind_label: str) -> Path
 def _status_hint(status: str) -> str:
     """Friendly nudge for each non-complete status."""
     return {
-        "running": "Another process may still be working — check the .lock file inside the run dir.",
+        "running": "Another process may still be working - check the .lock file inside the run dir.",
         "failed": "The run errored out; inspect the manifest's `details` field if present, then re-run.",
         "interrupted": "The run was Ctrl-C'd; just re-run it.",
         # Synthetic statuses produced by require_complete_run when the
         # manifest itself is unreadable (rare but possible after a crash).
-        "missing-manifest": "The run dir exists but has no manifest.json — likely a crashed run. Delete the dir and re-run.",
+        "missing-manifest": "The run dir exists but has no manifest.json - likely a crashed run. Delete the dir and re-run.",
     }.get(
         status,
         # Catches "corrupt-manifest (...)" and any unexpected literal status.
@@ -124,7 +124,7 @@ def require_no_live_lock(date_dir: Path, *, kind_label: str) -> None:
     """Raise if a same-kind+date `.tmp-*/.lock` is held by a live process.
 
     Stale locks (dead PGID, mismatched /proc starttime) are silently
-    ignored — `find_live_lock_in_date` logs a WARNING for each so they
+    ignored - `find_live_lock_in_date` logs a WARNING for each so they
     aren't completely invisible.
     """
     holder = find_live_lock_in_date(date_dir)

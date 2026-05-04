@@ -1,7 +1,7 @@
 """Tests for `compute_files_sha256` exclusion rules.
 
 The checksum is the manifest's tamper-detection field. It must be stable
-across "logically identical" runs — meaning ephemeral debug debris
+across "logically identical" runs - meaning ephemeral debug debris
 (`manifest.json.corrupt-*` backups, `.lock` files, `.tmp-*` workspace
 dirs) MUST be excluded so a failed-and-rerun-into-the-same-dir scenario
 doesn't yield two different checksums for the same payload.

@@ -1,4 +1,4 @@
-// AI analyzer service — Phase A.1.4 rewrite.
+// AI analyzer service - Phase A.1.4 rewrite.
 //
 // Major changes vs. the prior version:
 // - Replaces @google/generative-ai (legacy SDK) with @google/genai (current SDK).
@@ -88,7 +88,7 @@ function loadSchemas() {
 }
 
 // =============================================================================
-// System prompt + hash (Phase A.1.5 — load from file, fail loud if missing)
+// System prompt + hash (Phase A.1.5 - load from file, fail loud if missing)
 // =============================================================================
 
 let SYSTEM_PROMPT;
@@ -280,7 +280,7 @@ app.get('/health', (req, res) => {
   });
 });
 
-// POST /api/compare — the main analysis endpoint.
+// POST /api/compare - the main analysis endpoint.
 app.post('/api/compare', async (req, res) => {
   const apiKey = process.env.GEMINI_API_KEY;
   const requestIdFromBody = req.body && typeof req.body === 'object' ? req.body.request_id ?? null : null;
@@ -381,7 +381,7 @@ app.post('/api/compare', async (req, res) => {
       request_id,
       model: DEFAULT_MODEL,
       error_type: 'response_invalid',
-      retryable: true,  // model variability — retry might succeed
+      retryable: true,  // model variability - retry might succeed
       details: `model returned non-JSON output: ${err.message}`,
       status: 502,
     });

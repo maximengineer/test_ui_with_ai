@@ -79,7 +79,7 @@ def test_require_complete_run_status_hint_in_error(tmp_path):
 
 
 def test_require_complete_run_legacy_layout_passes(tmp_path):
-    """Legacy date-only layout (no ULID subdir) is trusted on faith — the
+    """Legacy date-only layout (no ULID subdir) is trusted on faith - the
     migration grace period works without forcing a manifest into existence."""
     date_dir = tmp_path / "01-01-2099"
     (date_dir / "example.com").mkdir(parents=True)  # url_dir, not run_id

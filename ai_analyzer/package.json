@@ -5,7 +5,7 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "test": "node --check server.js && node --check scripts/validate.js && echo 'syntax OK (Vitest contract tests deferred — see plan A.4)'"
+    "test": "node --check server.js && node --check scripts/validate.js && echo 'syntax OK (Vitest contract tests deferred - see plan A.4)'"
   },
   "engines": {
     "node": ">=24.0.0"

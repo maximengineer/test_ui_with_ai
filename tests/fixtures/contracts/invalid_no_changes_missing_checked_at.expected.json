@@ -1,5 +1,5 @@
 {
   "schema": "no_changes",
   "valid": false,
-  "note": "NoChangesMarker requires checked_at — without it, the marker carries no audit trail. Both validators must reject."
+  "note": "NoChangesMarker requires checked_at - without it, the marker carries no audit trail. Both validators must reject."
 }

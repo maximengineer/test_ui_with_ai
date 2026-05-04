@@ -6,7 +6,7 @@ a non-ULID `--run-id`, but the CLI commands' `try/except` only caught
 traceback. Now both exception classes get the friendly `❌ <msg>` +
 Click abort.
 
-Coverage: snapshot, current, compare, enhanced-report — every command
+Coverage: snapshot, current, compare, enhanced-report - every command
 that accepts `--run-id`.
 """
 
@@ -94,13 +94,13 @@ def test_compare_invalid_run_id_aborts(tmp_path, isolated_sites, monkeypatch):
     assert result.exit_code != 0
     # The validation in compare lives in the engine but may not fire
     # before the precondition check (no complete baseline yet). Either
-    # message is fine — what we MUST NOT see is a Python traceback.
+    # message is fine - what we MUST NOT see is a Python traceback.
     assert "Traceback" not in result.output
 
 
 # Note: `enhanced-report` ALSO catches ValueError under the H5 fix, but
 # its orchestrator early-returns when discovery finds no URLs (which is
-# the case for a tmp empty comparator dir) — so the run_id validation
+# the case for a tmp empty comparator dir) - so the run_id validation
 # never fires in a tractable test scenario. The branch is in the source
 # (`commands.py:enhanced_report` `except ValueError as e`) and the
 # pattern is identical to the three commands above; trust the

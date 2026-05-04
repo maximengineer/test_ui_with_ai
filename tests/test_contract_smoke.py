@@ -3,16 +3,16 @@
 Loads each fixture pair in tests/fixtures/contracts/ and validates the data
 against its target schema using BOTH validators:
 
-  1. Pydantic (in-process) — via the models in test_ui/contracts/ai_contract.py
-  2. ajv (subprocess) — via ai_analyzer/scripts/validate.js
+  1. Pydantic (in-process) - via the models in test_ui/contracts/ai_contract.py
+  2. ajv (subprocess) - via ai_analyzer/scripts/validate.js
 
 Asserts both validators agree with each other AND with the verdict declared in
 the fixture's `.expected.json`. If Pydantic and ajv disagree on the same input,
-the test fails loudly — a Pydantic-emitted JSON Schema doesn't match what ajv
+the test fails loudly - a Pydantic-emitted JSON Schema doesn't match what ajv
 strict mode actually enforces, and we want to know now.
 
 A.1.6 ships only the smoke pair (one valid, one invalid). The full matrix is
-A.4 — this same test will pick those up automatically as fixture pairs are
+A.4 - this same test will pick those up automatically as fixture pairs are
 added; no test code change needed.
 """
 
@@ -121,7 +121,7 @@ def test_at_least_one_fixture_pair_exists():
 
     pytest_generate_tests parameterizes test_pydantic_and_ajv_agree by however
     many fixture pairs exist. If someone deletes them all, that test would
-    silently not run — pytest reports zero failures, looks green, but the
+    silently not run - pytest reports zero failures, looks green, but the
     contract is unverified. This explicit count check fails loudly instead.
     """
     contracts_dir = Path(__file__).parent / "fixtures" / "contracts"
@@ -137,7 +137,7 @@ def test_pydantic_and_ajv_agree(fixture_pair):
 
     Three things must align: pydantic_valid == ajv_valid == expected['valid'].
     If any two differ, the contract source-of-truth (Pydantic) and its derived
-    JSON Schema (consumed by ajv) have drifted — see schemas/README.md for the
+    JSON Schema (consumed by ajv) have drifted - see schemas/README.md for the
     invariant.
     """
     fixture_file, expected_file = fixture_pair
@@ -151,7 +151,7 @@ def test_pydantic_and_ajv_agree(fixture_pair):
     ajv_valid, ajv_stderr = _validate_with_ajv(fixture_file, schema_name)
 
     # All three must agree. If pydantic and ajv disagree, the contract has
-    # drifted between the two languages — that's the bug this test exists to
+    # drifted between the two languages - that's the bug this test exists to
     # catch. If they agree but neither matches expected, the fixture itself is
     # wrong (or the contract changed and we need to update fixtures).
     assert pydantic_valid == ajv_valid, (

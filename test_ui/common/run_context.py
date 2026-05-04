@@ -30,7 +30,7 @@ This module is the new single seam.
 
 **Why a class wrapping the CM rather than just yielding the run_root path:**
 the caller needs to call `complete_manifest(run_root, url_count=N)` at the
-END of its work — that count isn't known until the body finishes, so it
+END of its work - that count isn't known until the body finishes, so it
 can't move into the CM. The yielded `RunContext` exposes `.complete(count)`
 so the caller's intent ("this run finished cleanly with N items") is
 explicit.
@@ -105,14 +105,14 @@ def run_context(
       - any other `BaseException`           → manifest status="failed"
       - body forgot to call `.complete(...)` → manifest status="failed"
         (we treat "exited cleanly without explicitly completing" as a bug,
-        not as success — atomic_run_dir's publish only happens after a
+        not as success - atomic_run_dir's publish only happens after a
         successful complete_manifest, so a forgetful caller wouldn't get
         their dir promoted anyway)
       - body raises AFTER calling `.complete()` → the prior "complete" status
         is preserved AND the exception still propagates. This protects the
         run from being silently downgraded when post-success cleanup fails.
         (`atomic_run_dir` will still refuse to promote the tmp dir because
-        an exception escaped the body — that's intentional, and the operator
+        an exception escaped the body - that's intentional, and the operator
         gets a tmp-<run_id>/ dir with a `complete` manifest to inspect.)
     """
     with atomic_run_dir(date_dir, run_id) as run_root:
@@ -139,7 +139,7 @@ def run_context(
             # Body returned without raising. If they forgot to call .complete(),
             # promote that to a failed status (atomic_run_dir won't rename
             # the tmp dir to final unless we exit cleanly here AND complete
-            # was called — see _completed check).
+            # was called - see _completed check).
             if not ctx._completed:
                 fail_manifest(run_root, status="failed", run_id=run_id, kind=kind)
                 raise RuntimeError(

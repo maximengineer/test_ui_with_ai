@@ -33,7 +33,7 @@ class Settings(BaseSettings):
     viewport_width: int = 1920
     viewport_height: int = 1080
 
-    # AI Analyzer settings — overridable by AFR_AI_ANALYZER_SERVICE_URL.
+    # AI Analyzer settings - overridable by AFR_AI_ANALYZER_SERVICE_URL.
     # The unprefixed AI_ANALYZER_SERVICE_URL was removed in Phase A.0.4
     # (see startup warning at top of this module).
     ai_analyzer_service_url: str = "http://ai-analyzer:3000"

@@ -10,7 +10,7 @@ that mounting:
 
 API routes live under `/api/*` and are registered BEFORE the SPA
 catch-all, so they take priority. The Vite dev server (used by
-`make dashboard-dev`) bypasses this module entirely — the developer
+`make dashboard-dev`) bypasses this module entirely - the developer
 hits :5173 and Vite proxies `/api` to the backend.
 
 Mounting is INTENTIONALLY OPTIONAL: if no built `dist/` is on disk,
@@ -43,7 +43,7 @@ def mount_spa(app: FastAPI) -> bool:
     """Mount the SPA assets + catch-all on `app`. Returns True iff a
     built `dist/` was present and the mount was installed.
 
-    Skipped quietly if `dist/` doesn't exist — that's the normal state
+    Skipped quietly if `dist/` doesn't exist - that's the normal state
     in pytest (no `npm run build` in the test pipeline) and during
     `make dashboard-dev` (Vite owns the SPA serving, not FastAPI).
 
@@ -51,7 +51,7 @@ def mount_spa(app: FastAPI) -> bool:
       1. `/assets` mounted FIRST so hashed bundle URLs hit the static
          file handler before the catch-all.
       2. The catch-all is registered LAST so /api/* routes (already
-         attached) take priority — `app.routes` is checked in order.
+         attached) take priority - `app.routes` is checked in order.
     """
     dist = _spa_dist_dir()
     if not dist.is_dir():
@@ -63,10 +63,10 @@ def mount_spa(app: FastAPI) -> bool:
 
     index_html = dist / "index.html"
     if not index_html.is_file():
-        # Half-built dist — partial copy, interrupted build. Don't
+        # Half-built dist - partial copy, interrupted build. Don't
         # half-mount; fail loud at import so the operator notices.
         raise RuntimeError(
-            f"dashboard: {dist} exists but {index_html} is missing — "
+            f"dashboard: {dist} exists but {index_html} is missing - "
             "rebuild the SPA before starting the dashboard."
         )
 
@@ -91,7 +91,7 @@ def mount_spa(app: FastAPI) -> bool:
 
     # Catch-all. Registered LAST so it doesn't shadow /api/*. We can't
     # use a path-converter here that excludes /api/* because FastAPI
-    # routes by registration order, not specificity — and /api/* is
+    # routes by registration order, not specificity - and /api/* is
     # already in the app by the time mount_spa runs (lifespan
     # constructs the app via create_app, which calls include_router
     # for sites/runs/reports/health BEFORE mount_spa).
@@ -99,11 +99,11 @@ def mount_spa(app: FastAPI) -> bool:
     async def spa_catchall(full_path: str, request: Request):
         # Defense-in-depth: anything starting with `/api` should already
         # have been routed by the API handlers. If it lands here, it's
-        # an unmatched API path — return 404, not the SPA shell, so the
+        # an unmatched API path - return 404, not the SPA shell, so the
         # client gets the right error.
         if full_path.startswith("api/") or full_path == "api":
             raise HTTPException(status_code=404)
-        # The browser hit /sites or /runs/123 directly — React Router
+        # The browser hit /sites or /runs/123 directly - React Router
         # picks up the path on the client side once index.html loads.
         # `request` consumed to silence unused-arg lint while keeping
         # the FastAPI signature shape (signals "this is a route").

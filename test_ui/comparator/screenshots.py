@@ -1,6 +1,6 @@
 """Screenshot comparison: SSIM scoring + visual-diff image generation.
 
-Phase A.3 split — extracted from comparator/engine.py. **Hard import** of
+Phase A.3 split - extracted from comparator/engine.py. **Hard import** of
 cv2 + skimage per plan; the prior code had a `CV2_AVAILABLE` flag that
 would silently degrade if the libs were missing. Hard import = fail at
 startup, not silently produce zero-information results.
@@ -85,7 +85,7 @@ def _write_visual_diff(
 
     Otsu-thresholds the SSIM diff to a binary mask, finds external contours,
     draws red rectangles around each on the current frame. Output written to
-    `out_path`. Compression artifacts can produce noisy small contours — the
+    `out_path`. Compression artifacts can produce noisy small contours - the
     A.2 visual-diff golden test only checks size-bounds, not byte equality,
     to absorb that.
     """

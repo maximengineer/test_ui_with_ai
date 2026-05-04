@@ -3,7 +3,7 @@
 Reads the comparator's structured diff JSON + screenshots into the in-memory
 shapes the AI client and HTML renderer consume. Also owns the four
 mutually-exclusive per-URL result files (`ai_analysis.json`, `ai_error.json`,
-`no_changes.json`, `ai_disabled.json`) — see `RESULT_FILENAMES` and
+`no_changes.json`, `ai_disabled.json`) - see `RESULT_FILENAMES` and
 `write_result_file` for why exclusivity matters.
 """
 
@@ -46,7 +46,7 @@ def write_result_file(
 ) -> None:
     """Write one result file, atomically clearing the other three.
 
-    Raises on unknown filename — caller bug, not a runtime concern.
+    Raises on unknown filename - caller bug, not a runtime concern.
     """
     if filename not in RESULT_FILENAMES:
         raise ValueError(f"unknown result filename {filename}")
@@ -63,7 +63,7 @@ def load_structured_data(diffs_dir: Path | None) -> dict[str, Any]:
     """Load all structured diff JSON files for a URL.
 
     Returns `{}` if `diffs_dir` is None or missing. Per-file failures are
-    represented as `{"error": "..."}` entries rather than aborting the load —
+    represented as `{"error": "..."}` entries rather than aborting the load -
     the AI service can still partially analyze with degraded data.
     """
     if not diffs_dir or not diffs_dir.exists():
@@ -155,7 +155,7 @@ def load_screenshots(
                 screenshot_files["visual_diff"] = visual_diff_path
 
     # Every entry in screenshot_files was added only after `.exists()` was
-    # already True upstream — the existence check + `_missing` branch were
+    # already True upstream - the existence check + `_missing` branch were
     # dead code (verified in deep-dive audit). Read directly; OSError covers
     # the unlikely race where the file disappears between the upstream
     # exists() check and read here.

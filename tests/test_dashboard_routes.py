@@ -51,7 +51,7 @@ def _client_with(db_path: Path):
     """Open a TestClient with `get_db` swapped to use `db_path`.
 
     Always cleans up `app.dependency_overrides` on exit, even if the body
-    raises — without that, a failing test would leak its DB connection
+    raises - without that, a failing test would leak its DB connection
     factory into the next test that imports `app`. (Module-level `app`
     is shared across tests; the contextmanager pattern is the discipline
     that makes that safe.)
@@ -111,7 +111,7 @@ def test_health_reports_db_ok_and_analyzer_down(client):
 
 def test_sites_returns_loaded_sites(client):
     """The route reads from the real `test_ui/sites.yml`. Smoke-test that
-    we get a list back with the expected shape — the YAML content varies
+    we get a list back with the expected shape - the YAML content varies
     so we don't pin specific entries."""
     r = client.get("/api/sites")
     assert r.status_code == 200
@@ -124,7 +124,7 @@ def test_sites_returns_loaded_sites(client):
 
 # --------------------------------------------------------------------------- #
 # Sites CRUD routes (Phase C.2 slice). Tests use a tmp sites.yml via the     #
-# `_sites_path` indirection — monkeypatching the route's path resolver lets  #
+# `_sites_path` indirection - monkeypatching the route's path resolver lets  #
 # us exercise the real on-disk write path without touching the bundled file. #
 # --------------------------------------------------------------------------- #
 
@@ -388,7 +388,7 @@ def test_runs_route_handles_corrupt_args_json_gracefully(client):
     """A row with garbage in `args_json` must NOT take down the route.
 
     `_row_to_runrow` substitutes `{}` (and `[]` for command_json) when the
-    JSON parse fails. Pre-fix this had no test — only the happy path was
+    JSON parse fails. Pre-fix this had no test - only the happy path was
     exercised, and the defensive logging branch could rot silently.
     """
     db_path = settings.runs_db_path
@@ -422,7 +422,7 @@ def test_dates_filters_out_garbage_dir_names(client):
     """Names that don't match strict DD-MM-YYYY are dropped from the listing.
 
     Pre-fix the route would include a name like `not-a-date` in the
-    response — `str.split("-")` happens to yield exactly 3 tokens for it
+    response - `str.split("-")` happens to yield exactly 3 tokens for it
     so the sort key was `'date-a-not'`, which sorted ABOVE real dates.
     The frontend's date picker would have shown garbage as a selectable
     option. Now: strict regex filter, garbage drops out, sort is total."""
@@ -440,7 +440,7 @@ def test_dates_filters_out_garbage_dir_names(client):
 
 def test_dates_rejects_impossible_calendar_dates(client):
     """Round 1 used a regex-only check that accepted shapes like
-    "32-13-2099" and "00-00-0000" — clickable dates in the picker that
+    "32-13-2099" and "00-00-0000" - clickable dates in the picker that
     don't correspond to a real day. Round 2 switched to `datetime.strptime`
     so impossible dates are filtered out alongside garbage names."""
     settings.baseline_dir.mkdir(parents=True, exist_ok=True)
@@ -465,7 +465,7 @@ def test_run_detail_with_non_int_id_returns_422(client):
 
 
 def test_health_reports_db_ok_false_when_db_path_unset(tmp_path, monkeypatch):
-    """If `settings.runs_db_path` is None, /api/health must NOT 500 — it
+    """If `settings.runs_db_path` is None, /api/health must NOT 500 - it
     must return `db_ok=False, ok=False`. This is the entire point of N3:
     surface degraded state instead of crashing."""
     db_path = _wire_settings_to_tmp(tmp_path, monkeypatch)

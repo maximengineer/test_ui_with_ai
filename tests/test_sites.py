@@ -65,13 +65,13 @@ def test_site_id_pattern_rejects_bad(bad_id):
 
 
 def test_site_rejects_unknown_field():
-    """extra='forbid' — silent typos in sites.yml become loud Pydantic errors."""
+    """extra='forbid' - silent typos in sites.yml become loud Pydantic errors."""
     with pytest.raises(ValidationError):
         Site(id="x", name="x", url="https://x", color="red")
 
 
 # ---------------------------------------------------------------------------
-# load_sites — happy path
+# load_sites - happy path
 # ---------------------------------------------------------------------------
 
 
@@ -96,7 +96,7 @@ def test_load_sites_explicit_ids(tmp_path):
 
 
 def test_load_sites_handles_empty_file(tmp_path):
-    """Empty / missing `sites:` key returns empty list — don't crash on a
+    """Empty / missing `sites:` key returns empty list - don't crash on a
     fresh installation with no sites configured yet."""
     sites_file = tmp_path / "sites.yml"
     sites_file.write_text("", encoding="utf-8")
@@ -114,7 +114,7 @@ def test_load_sites_rejects_non_list_sites(tmp_path):
 
 
 # ---------------------------------------------------------------------------
-# load_sites — auto-generates id from name (legacy compat)
+# load_sites - auto-generates id from name (legacy compat)
 # ---------------------------------------------------------------------------
 
 
@@ -153,7 +153,7 @@ def test_load_sites_dedupes_auto_generated_ids(tmp_path):
 def test_load_sites_normalizes_namd_typo_like_migration(tmp_path):
     """Pre-B.3 typo `namd:` is auto-fixed to `name:` (matches the migration
     script's behavior). The loader then derives the id from the normalized
-    name, NOT from a URL fallback — that way the loader's auto-generated id
+    name, NOT from a URL fallback - that way the loader's auto-generated id
     matches what `scripts/migrate_sites_ids.py` would commit to disk.
     """
     sites_file = tmp_path / "sites.yml"
@@ -172,7 +172,7 @@ def test_load_sites_rejects_unknown_yaml_field(tmp_path):
 
     Pre-fix bug: `_coerce_to_site` only passed id/name/url to Pydantic, so
     extras silently dropped and the loader auto-generated an id from the
-    name — leaving the operator confused why their `idd: my-id` was ignored.
+    name - leaving the operator confused why their `idd: my-id` was ignored.
     The fix routes the FULL dict through `Site.model_validate` so
     `extra='forbid'` fires.
     """
@@ -189,7 +189,7 @@ def test_load_sites_rejects_unknown_yaml_field(tmp_path):
 
 
 def test_load_sites_rejects_unknown_yaml_field_alongside_explicit_id(tmp_path):
-    """Same as above but with a valid `id:` already present — extras still rejected."""
+    """Same as above but with a valid `id:` already present - extras still rejected."""
     sites_file = tmp_path / "sites.yml"
     sites_file.write_text(
         "sites:\n"
@@ -204,12 +204,12 @@ def test_load_sites_rejects_unknown_yaml_field_alongside_explicit_id(tmp_path):
 
 
 # ---------------------------------------------------------------------------
-# load_sites — errors
+# load_sites - errors
 # ---------------------------------------------------------------------------
 
 
 def test_load_sites_explicit_duplicate_id_raises(tmp_path):
-    """Explicit ids that collide are an authoring error — fail loud."""
+    """Explicit ids that collide are an authoring error - fail loud."""
     sites_file = tmp_path / "sites.yml"
     sites_file.write_text(
         "sites:\n"

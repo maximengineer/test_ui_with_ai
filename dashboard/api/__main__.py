@@ -24,7 +24,7 @@ def _resolve_port() -> int:
     """Read AFR_DASHBOARD_PORT and validate it. Hard-fail on bad input.
 
     Failing fast on a malformed env var is friendlier than uvicorn's later
-    "[Errno 99] Cannot assign requested address" — the operator sees the
+    "[Errno 99] Cannot assign requested address" - the operator sees the
     actual problem with the actual variable name.
     """
     raw = os.environ.get("AFR_DASHBOARD_PORT")
@@ -51,7 +51,7 @@ def main() -> None:
     if bind not in ("127.0.0.1", "localhost", "::1"):
         logger.warning(
             f"dashboard binding to non-loopback address {bind!r}. The dashboard "
-            "has no auth — anyone on the network can trigger runs. Set "
+            "has no auth - anyone on the network can trigger runs. Set "
             "AFR_DASHBOARD_BIND=127.0.0.1 to revert."
         )
 

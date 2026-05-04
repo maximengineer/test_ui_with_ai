@@ -36,7 +36,7 @@
           "sites"
         ],
         "summary": "Post Sites",
-        "description": "Append a new site. The id is auto-generated server-side from the\nslugified name with a `-N` suffix on collision (so id-conflict 409s\nare structurally impossible \u2014 see `add_site`). Atomic write\npreserves operator-authored YAML comments.",
+        "description": "Append a new site. The id is auto-generated server-side from the\nslugified name with a `-N` suffix on collision (so id-conflict 409s\nare structurally impossible - see `add_site`). Atomic write\npreserves operator-authored YAML comments.",
         "operationId": "post_sites_api_sites_post",
         "requestBody": {
           "content": {
@@ -71,7 +71,7 @@
           "sites"
         ],
         "summary": "Patch Site",
-        "description": "Mutate name and/or url. id is immutable \u2014 use DELETE + POST to rename.",
+        "description": "Mutate name and/or url. id is immutable - use DELETE + POST to rename.",
         "operationId": "patch_site_api_sites__site_id__patch",
         "parameters": [
           {
@@ -118,7 +118,7 @@
           "sites"
         ],
         "summary": "Delete Site Route",
-        "description": "Remove a site from sites.yml. On-disk per-site data dirs are NOT\ntouched \u2014 historical artifacts remain readable; only future runs stop\nincluding this site.",
+        "description": "Remove a site from sites.yml. On-disk per-site data dirs are NOT\ntouched - historical artifacts remain readable; only future runs stop\nincluding this site.",
         "operationId": "delete_site_route_api_sites__site_id__delete",
         "parameters": [
           {
@@ -473,7 +473,7 @@
           "runs"
         ],
         "summary": "Get Run Logs",
-        "description": "Stream the subprocess log file. Always capped at 1 MB even without\n`tail` to prevent runaway responses.\n\nReturns 404 if the row doesn't exist OR if the log file hasn't been\ncreated yet (the spawn opens it lazily \u2014 a row in `pending` for less\nthan a few ms may have no log).",
+        "description": "Stream the subprocess log file. Always capped at 1 MB even without\n`tail` to prevent runaway responses.\n\nReturns 404 if the row doesn't exist OR if the log file hasn't been\ncreated yet (the spawn opens it lazily - a row in `pending` for less\nthan a few ms may have no log).",
         "operationId": "get_run_logs_api_runs__db_id__logs_get",
         "parameters": [
           {
@@ -766,6 +766,22 @@
               "type": "string",
               "title": "Which"
             }
+          },
+          {
+            "name": "if-none-match",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-None-Match"
+            }
           }
         ],
         "responses": {
@@ -777,6 +793,9 @@
               },
               "image/png": {}
             }
+          },
+          "304": {
+            "description": "Not modified - client's If-None-Match matched"
           },
           "400": {
             "description": "Malformed parameters"
@@ -803,7 +822,7 @@
           "health"
         ],
         "summary": "Get Health",
-        "description": "Liveness check. Never raises \u2014 degraded states surface as `False`s.\n\nDoes NOT use `DbDep`: if the DB itself can't be opened (disk full,\npermission denied on the WAL file), the dependency would raise BEFORE\nthe handler runs and FastAPI would 500. We want the failure to\nsurface as `db_ok=False` instead \u2014 that's the entire point of having\na health route.\n\nThe AI analyzer probe is bounded to 2s so a hung analyzer container\ncan't make `/api/health` itself appear hung. The overall `ok` mirrors\n`db_ok` only \u2014 the analyzer being down doesn't invalidate the dashboard\n(it just disables AI-dependent UI affordances client-side).",
+        "description": "Liveness check. Never raises - degraded states surface as `False`s.\n\nDoes NOT use `DbDep`: if the DB itself can't be opened (disk full,\npermission denied on the WAL file), the dependency would raise BEFORE\nthe handler runs and FastAPI would 500. We want the failure to\nsurface as `db_ok=False` instead - that's the entire point of having\na health route.\n\nThe AI analyzer probe is bounded to 2s so a hung analyzer container\ncan't make `/api/health` itself appear hung. The overall `ok` mirrors\n`db_ok` only - the analyzer being down doesn't invalidate the dashboard\n(it just disables AI-dependent UI affordances client-side).",
         "operationId": "get_health_api_health_get",
         "responses": {
           "200": {
@@ -961,7 +980,7 @@
           "ai_analyzer_ok"
         ],
         "title": "HealthOut",
-        "description": "Quick liveness probe for the dashboard.\n\n`db_ok` False \u2192 SQLite open or migration failed; the dashboard is\nrunning in a degraded state and most routes will 500.\n`ai_analyzer_ok` is checked with a 2s timeout \u2014 the dashboard never\nhangs on a slow analyzer; a False here just disables AI-dependent\nUI affordances client-side."
+        "description": "Quick liveness probe for the dashboard.\n\n`db_ok` False \u2192 SQLite open or migration failed; the dashboard is\nrunning in a degraded state and most routes will 500.\n`ai_analyzer_ok` is checked with a 2s timeout - the dashboard never\nhangs on a slow analyzer; a False here just disables AI-dependent\nUI affordances client-side."
       },
       "ReportRunRequest": {
         "properties": {
@@ -1036,7 +1055,7 @@
           "url_count"
         ],
         "title": "ReportSummaryOut",
-        "description": "`GET /api/reports/{date}/{run_id}` \u2014 top-level summary. `run_id`,\n`started_at`, `finished_at`, `url_count` come from the manifest;\n`severity_counts` is computed from the per-URL files."
+        "description": "`GET /api/reports/{date}/{run_id}` - top-level summary. `run_id`,\n`started_at`, `finished_at`, `url_count` come from the manifest;\n`severity_counts` is computed from the per-URL files."
       },
       "ReportUrlDetail": {
         "properties": {
@@ -1093,7 +1112,7 @@
           "analysis"
         ],
         "title": "ReportUrlDetail",
-        "description": "`GET /api/reports/{date}/{run_id}/url?id=<url_id>` \u2014 the per-URL\nAI analysis JSON, returned verbatim from disk.\n\nTyped as `dict` because the AI analysis schema lives in\n`test_ui/contracts/` and varies by `result_type` \u2014 wiring up a full\ndiscriminated union here would duplicate ~200 LOC of pydantic models\nthat already exist in the contracts package, with the only payoff\nbeing typed access in the React drill-in (which renders it as JSON\nanyway). Acceptable type-loss for the MVP; tighten if the UI needs\ntyped access."
+        "description": "`GET /api/reports/{date}/{run_id}/url?id=<url_id>` - the per-URL\nAI analysis JSON, returned verbatim from disk.\n\nTyped as `dict` because the AI analysis schema lives in\n`test_ui/contracts/` and varies by `result_type` - wiring up a full\ndiscriminated union here would duplicate ~200 LOC of pydantic models\nthat already exist in the contracts package, with the only payoff\nbeing typed access in the React drill-in (which renders it as JSON\nanyway). Acceptable type-loss for the MVP; tighten if the UI needs\ntyped access."
       },
       "ReportUrlSummary": {
         "properties": {
@@ -1142,7 +1161,7 @@
           "result_type"
         ],
         "title": "ReportUrlSummary",
-        "description": "One row in the `/api/reports/{date}/{run_id}/urls` listing.\n\n`severity` is only populated for `result_type='analysis_success'` \u2014\nthe other result types don't have a meaningful severity. The frontend\ncan surface a colored pill keyed off either `result_type` (always\npresent) or `severity` (success-only)."
+        "description": "One row in the `/api/reports/{date}/{run_id}/urls` listing.\n\n`severity` is only populated for `result_type='analysis_success'` -\nthe other result types don't have a meaningful severity. The frontend\ncan surface a colored pill keyed off either `result_type` (always\npresent) or `severity` (success-only)."
       },
       "ReportUrlsOut": {
         "properties": {
@@ -1340,7 +1359,7 @@
           "source"
         ],
         "title": "RunRow",
-        "description": "One row from `runs`, projected for the wire.\n\n`args_json` and `command_json` are exposed as parsed objects (not raw\nstrings) \u2014 saves the frontend a JSON.parse and gives openapi-typescript\na typed shape to work with."
+        "description": "One row from `runs`, projected for the wire.\n\n`args_json` and `command_json` are exposed as parsed objects (not raw\nstrings) - saves the frontend a JSON.parse and gives openapi-typescript\na typed shape to work with."
       },
       "RunSpawnedOut": {
         "properties": {
@@ -1396,7 +1415,7 @@
           "url"
         ],
         "title": "SiteCreateIn",
-        "description": "`POST /api/sites` body. `id` is auto-generated server-side from the\nslugified name + numeric dedup suffix; the client never sets it.\n\n`max_length` caps mirror the underlying `Site` model \u2014 defending at\nthe wire boundary too means a 100KB URL gets rejected with a clear\n422 instead of bloating sites.yml at the persistence layer."
+        "description": "`POST /api/sites` body. `id` is auto-generated server-side from the\nslugified name + numeric dedup suffix; the client never sets it.\n\n`max_length` caps mirror the underlying `Site` model - defending at\nthe wire boundary too means a 100KB URL gets rejected with a clear\n422 instead of bloating sites.yml at the persistence layer."
       },
       "SiteOut": {
         "properties": {
@@ -1455,7 +1474,7 @@
         "additionalProperties": false,
         "type": "object",
         "title": "SiteUpdateIn",
-        "description": "`PATCH /api/sites/{id}` body. Both fields optional \u2014 operator can\nrename without changing the URL or vice versa. `id` is immutable\n(changing it would invalidate existing per-site data dirs); the URL\npath component is authoritative."
+        "description": "`PATCH /api/sites/{id}` body. Both fields optional - operator can\nrename without changing the URL or vice versa. `id` is immutable\n(changing it would invalidate existing per-site data dirs); the URL\npath component is authoritative."
       },
       "SyncOut": {
         "properties": {
@@ -1475,7 +1494,7 @@
           "scanned"
         ],
         "title": "SyncOut",
-        "description": "`POST /api/sync` result. `synced` is the count of NEW rows inserted.\n\nRe-running sync should be a no-op (returning `synced=0`) once the DB\nhas caught up to the on-disk state \u2014 the test pins this idempotency."
+        "description": "`POST /api/sync` result. `synced` is the count of NEW rows inserted.\n\nRe-running sync should be a no-op (returning `synced=0`) once the DB\nhas caught up to the on-disk state - the test pins this idempotency."
       },
       "ValidationError": {
         "properties": {

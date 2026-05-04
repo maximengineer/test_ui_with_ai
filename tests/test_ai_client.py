@@ -2,7 +2,7 @@
 
 Exercises every retryable / non-retryable / transport-level branch of
 `test_ui/report/ai_client.py:AIClient.send`. The module owns the AI HTTP
-contract — typed request shape, retry behaviour, Retry-After honoring,
+contract - typed request shape, retry behaviour, Retry-After honoring,
 semaphore concurrency cap, and contract-validation of responses. These
 were all extracted from the pre-A.3 god-object with zero direct test
 coverage; this file fills that gap.
@@ -35,7 +35,7 @@ GEMINI_URL = "http://test.local"
 
 @pytest.fixture
 async def client():
-    """A real httpx.AsyncClient — respx intercepts at the transport layer."""
+    """A real httpx.AsyncClient - respx intercepts at the transport layer."""
     async with httpx.AsyncClient(timeout=30.0) as c:
         yield c
 
@@ -52,7 +52,7 @@ def captured_sleeps(monkeypatch):
     async def _no_sleep(seconds):
         waits.append(seconds)
 
-    # Patch in the module under test, not asyncio globally — keeps respx /
+    # Patch in the module under test, not asyncio globally - keeps respx /
     # pytest-asyncio internals using the real sleep.
     monkeypatch.setattr("test_ui.report.ai_client.asyncio.sleep", _no_sleep)
     return waits
@@ -101,7 +101,7 @@ def _error_body(
 def _ai_request(url: str = "https://example.com") -> dict:
     """A valid AIAnalysisRequest dict (the wire shape AIClient.send takes)."""
     # Build via AIClient.create_request so we exercise its shape too.
-    # Each "screenshot" is base64 of a 1x1 PNG-ish payload — Pydantic only
+    # Each "screenshot" is base64 of a 1x1 PNG-ish payload - Pydantic only
     # checks the strings exist, not that they're valid images.
     fake_b64 = base64.b64encode(b"fake-png-bytes").decode()
     structured_data = {
@@ -138,7 +138,7 @@ def _ai_request(url: str = "https://example.com") -> dict:
 
 
 # ---------------------------------------------------------------------------
-# create_request — pure shape verification
+# create_request - pure shape verification
 # ---------------------------------------------------------------------------
 
 
@@ -200,7 +200,7 @@ def test_create_request_drops_loader_only_keys():
 
 
 # ---------------------------------------------------------------------------
-# send — happy path
+# send - happy path
 # ---------------------------------------------------------------------------
 
 
@@ -222,7 +222,7 @@ async def test_send_returns_typed_success_dict_on_200(client):
 
 
 # ---------------------------------------------------------------------------
-# send — retry behaviour
+# send - retry behaviour
 # ---------------------------------------------------------------------------
 
 
@@ -341,14 +341,14 @@ async def test_send_exhausts_retries_then_returns_typed_error(client, captured_s
         result = await ai_client.send(req, max_retries=3)
 
     assert route.call_count == 3
-    # Sleeps between attempts only — N attempts means N-1 sleeps.
+    # Sleeps between attempts only - N attempts means N-1 sleeps.
     assert captured_sleeps == [2, 4]
     assert result["result_type"] == "analysis_error"
     assert result["retryable"] is True
 
 
 # ---------------------------------------------------------------------------
-# send — transport-level failures
+# send - transport-level failures
 # ---------------------------------------------------------------------------
 
 
@@ -387,7 +387,7 @@ async def test_send_synthesizes_provider_error_on_transport_failure(
 
 
 # ---------------------------------------------------------------------------
-# send — malformed / contract-violating responses
+# send - malformed / contract-violating responses
 # ---------------------------------------------------------------------------
 
 
@@ -430,7 +430,7 @@ async def test_send_returns_response_invalid_on_schema_violation(
 
 
 async def test_send_rejects_marker_result_types_on_the_wire(client, captured_sleeps):
-    """Server returning no_changes / ai_disabled is illegal — those are client-only.
+    """Server returning no_changes / ai_disabled is illegal - those are client-only.
 
     Discriminator parses successfully (the union accepts them) but the send
     code path treats them as a server-side bug → response_invalid.
@@ -457,7 +457,7 @@ async def test_send_rejects_marker_result_types_on_the_wire(client, captured_sle
 
 
 # ---------------------------------------------------------------------------
-# Retry-After parser — pure helper
+# Retry-After parser - pure helper
 # ---------------------------------------------------------------------------
 
 
@@ -483,7 +483,7 @@ def test_parse_retry_after_handles_none_response():
 
 
 # ---------------------------------------------------------------------------
-# Semaphore — concurrency cap
+# Semaphore - concurrency cap
 # ---------------------------------------------------------------------------
 
 
@@ -525,7 +525,7 @@ async def test_semaphore_caps_in_flight_requests(client, captured_sleeps):
         ]
 
         # Wait (with a generous timeout) for the cap to be reached, then assert
-        # we're stuck there — no third request should slip through. The
+        # we're stuck there - no third request should slip through. The
         # `saturated` event fires the moment in_flight == 2; if the semaphore
         # is broken and lets a 3rd in, peak will record it.
         try:
@@ -555,7 +555,7 @@ async def test_semaphore_floor_at_one(client):
     Inspects `Semaphore._value` (a private CPython attribute, stable since 3.4
     but not part of the documented API). The behavioral test above
     (test_semaphore_caps_in_flight_requests) exercises the same constraint
-    via observable behavior — if `_value` ever changes, this assertion is
+    via observable behavior - if `_value` ever changes, this assertion is
     cheap to update without losing real coverage.
     """
     ai_client = AIClient(client=client, gemini_url=GEMINI_URL, ai_concurrency=0)

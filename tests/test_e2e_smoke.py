@@ -8,12 +8,12 @@ and that the writer's stale-file clearing is working.
 **Does NOT exercise HTML rendering.** The renderer's Jinja template references
 fields that don't exist in the calculator output (e.g. `confidence_metrics.
 average_confidence` vs. the actual `confidence_metrics.ai_confidence.average`)
-— it raises `UndefinedError` on every render. This is a pre-existing bug
+- it raises `UndefinedError` on every render. This is a pre-existing bug
 flagged for A.3 to fix as part of the html_renderer split. Characterization
 tests should pin behavior we want to preserve, not bake in brokenness, so we
 just don't test the render path.
 
-This test is the safety net for Phase A.3 — the god-object refactor must not
+This test is the safety net for Phase A.3 - the god-object refactor must not
 change the observable per-URL persistence behavior pinned here.
 """
 
@@ -31,7 +31,7 @@ from test_ui.cli import _open_orchestrator
 
 
 # ---------------------------------------------------------------------------
-# Helpers — build a synthetic comparator tree on disk
+# Helpers - build a synthetic comparator tree on disk
 # ---------------------------------------------------------------------------
 
 
@@ -59,7 +59,7 @@ def _seed_comparator_tree(
             "js_changes.json",
         ):
             (diffs / fname).write_text((example_diffs_dir / fname).read_text())
-        # comparison_results.json with screenshot paths that don't exist —
+        # comparison_results.json with screenshot paths that don't exist -
         # the loader gracefully handles missing screenshots.
         cr = {
             "metadata": {
@@ -211,7 +211,7 @@ async def test_e2e_smoke_pipeline_success_path(
 
     # Real screenshots so process_single_url's screenshot-loader doesn't fail.
     # The seed function set baseline_path/current_path in comparison_results.json
-    # to /tmp/missing-* — overwrite those with paths that have real PNGs.
+    # to /tmp/missing-* - overwrite those with paths that have real PNGs.
     baseline_root = tmp_path / "real-baseline"
     current_root = tmp_path / "real-current"
     _make_real_screenshots(

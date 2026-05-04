@@ -210,7 +210,7 @@ async def test_generate_enhanced_report_refuses_when_comparator_failed(
 
 def test_enhanced_report_cli_handles_precondition_failed_cleanly(tmp_path, monkeypatch):
     """The `enhanced-report` Click command must NOT prefix PreconditionFailed
-    messages with "Enhanced report generation failed:" — that's misleading
+    messages with "Enhanced report generation failed:" - that's misleading
     (the failure is BEFORE generation, not during it).
 
     Pin the post-B.2-review fix: PreconditionFailed gets the same `❌ <msg>`
@@ -223,7 +223,7 @@ def test_enhanced_report_cli_handles_precondition_failed_cleanly(tmp_path, monke
 
     monkeypatch.setattr(settings, "report_dir", tmp_path / "report")
 
-    # Seed a comparator date with a single FAILED run — require_complete_run
+    # Seed a comparator date with a single FAILED run - require_complete_run
     # will then raise with the failed-status hint. (An empty date dir would
     # trigger the legacy fallback path instead and discovery's empty-buckets
     # branch returns cleanly without firing the precondition.)
@@ -271,7 +271,7 @@ def test_enhanced_report_cli_handles_precondition_failed_cleanly(tmp_path, monke
 
 @pytest.mark.asyncio
 async def test_published_runs_have_no_lock_file(tmp_path, monkeypatch):
-    """The published `<run_id>/` dir must NEVER contain a `.lock` file —
+    """The published `<run_id>/` dir must NEVER contain a `.lock` file -
     the lock is released *before* atomic publication renames .tmp- to final.
 
     Pinning this catches a future regression where someone moves the

@@ -10,7 +10,7 @@ each one that looks like a synthetic no-change record (`analysis_type ==
 "no_changes_detected"`), rewrites the data to a typed `NoChangesMarker` at
 `no_changes.json` and removes the original.
 
-Idempotent — safe to re-run. Files that aren't synthetic no-change records
+Idempotent - safe to re-run. Files that aren't synthetic no-change records
 (real AI analyses, errors, already-migrated entries) are left alone.
 
 Usage:
@@ -56,7 +56,7 @@ def migrate_one(ai_analysis_file: Path, *, dry_run: bool) -> str:
         return "skipped-bad-json"
 
     if not _looks_like_synthetic_no_change(data):
-        # Real AI analysis — never delete it, even if no_changes.json sits
+        # Real AI analysis - never delete it, even if no_changes.json sits
         # alongside (someone may have produced a hybrid state by hand).
         return "skipped-not-no-change"
 

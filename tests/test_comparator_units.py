@@ -4,7 +4,7 @@ Direct tests for the smaller-grained functions in `test_ui/comparator/`,
 complementing the slow end-to-end golden in `test_comparator_golden.py`.
 
 Marked `@pytest.mark.slow` because:
-  - DOM tests import BeautifulSoup + lxml — fine, but bundled with the slow
+  - DOM tests import BeautifulSoup + lxml - fine, but bundled with the slow
     suite for one-stop run.
   - Screenshot tests use OpenCV (cv2) + skimage SSIM, which take 100-300ms
     per call and dominate cold-start cost. Pinned versions
@@ -26,7 +26,7 @@ pytestmark = pytest.mark.slow
 
 
 # ---------------------------------------------------------------------------
-# DOM diff — crafted HTML pairs
+# DOM diff - crafted HTML pairs
 # ---------------------------------------------------------------------------
 
 
@@ -86,7 +86,7 @@ def test_compare_dom_detects_added_element(tmp_path):
 
 def test_compare_dom_detects_removed_high_impact_element(tmp_path):
     """High-impact tags (form/button/input) currently get impact='high' on
-    BOTH addition and removal — the `change_type` parameter to
+    BOTH addition and removal - the `change_type` parameter to
     `assess_element_impact` is unused (see latent-bug pin in
     test_assess_element_impact_high_impact_branch_is_unconditional below)."""
     a = _write_html(
@@ -158,14 +158,14 @@ def test_compare_dom_handles_malformed_html_gracefully(tmp_path):
     a = _write_html(tmp_path / "a.html", "<html><body><p>")  # unclosed tags
     b = _write_html(tmp_path / "b.html", "<not-real><<<>>>")
     result = dom.compare_dom(a, b)
-    # bs4 with lxml parses these without raising — assert we got a dict back,
+    # bs4 with lxml parses these without raising - assert we got a dict back,
     # not an error envelope.
     assert "error" not in result
     assert "has_changes" in result
 
 
 # ---------------------------------------------------------------------------
-# create_html_changes_json — projection of dom_result into AI-facing shape
+# create_html_changes_json - projection of dom_result into AI-facing shape
 # ---------------------------------------------------------------------------
 
 
@@ -196,14 +196,14 @@ def test_create_html_changes_json_emits_title_change_record(tmp_path):
 
 
 # ---------------------------------------------------------------------------
-# assess_element_impact — pure heuristic
+# assess_element_impact - pure heuristic
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.parametrize(
     "tag,count_diff,expected",
     [
-        # HIGH_IMPACT_TAGS — always 'high', no magnitude threshold.
+        # HIGH_IMPACT_TAGS - always 'high', no magnitude threshold.
         ("form", 1, "high"),
         ("button", 1, "high"),
         ("input", 5, "high"),
@@ -214,7 +214,7 @@ def test_create_html_changes_json_emits_title_change_record(tmp_path):
         # LOW_IMPACT_TAGS: 'low' if count_diff < 10 else 'medium'.
         ("div", 5, "low"),
         ("span", 50, "medium"),
-        # Tag outside the three classes — always 'low'.
+        # Tag outside the three classes - always 'low'.
         ("blockquote", 100, "low"),
     ],
 )
@@ -223,7 +223,7 @@ def test_assess_element_impact(tag, count_diff, expected):
 
 
 def test_assess_element_impact_high_impact_is_unconditional():
-    """HIGH_IMPACT_TAGS always rate 'high' — no magnitude threshold.
+    """HIGH_IMPACT_TAGS always rate 'high' - no magnitude threshold.
 
     Pre-cleanup the function had a `count_diff > 0 else 'medium'` ternary
     in the HIGH_IMPACT branch, but `count_diff` is always positive at the
@@ -239,7 +239,7 @@ def test_assess_element_impact_high_impact_is_unconditional():
 
 
 # ---------------------------------------------------------------------------
-# Screenshots — synthetic Pillow images
+# Screenshots - synthetic Pillow images
 # ---------------------------------------------------------------------------
 
 
@@ -263,7 +263,7 @@ def test_compare_screenshots_identical_images_perfect_ssim(tmp_path):
 
 
 def test_compare_screenshots_different_colors_low_ssim(tmp_path):
-    """Solid red vs solid blue — drastically different. SSIM should be low,
+    """Solid red vs solid blue - drastically different. SSIM should be low,
     visual_diff.png written."""
     a = _make_solid_png(tmp_path / "a.png", color=(255, 0, 0))
     b = _make_solid_png(tmp_path / "b.png", color=(0, 0, 255))
@@ -325,7 +325,7 @@ def test_compare_screenshots_does_not_create_diffs_dir_when_identical(tmp_path):
 
 
 def test_compare_screenshots_writes_diff_image_for_subtle_change(tmp_path):
-    """Slight color shift in a region — SSIM < 1.0, diff image written.
+    """Slight color shift in a region - SSIM < 1.0, diff image written.
 
     Uses Pillow to paint a red square onto a green canvas in the 'current'
     image only. The diff image should highlight the changed region.

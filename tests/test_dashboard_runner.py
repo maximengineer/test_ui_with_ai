@@ -1,11 +1,11 @@
-"""Tests for `dashboard/api/runner.py` — the subprocess job runner.
+"""Tests for `dashboard/api/runner.py` - the subprocess job runner.
 
 Covers the three independently-failure-prone halves:
   1. **Process-identity primitives** (`pid_start_time`, `_pgid_alive_and_ours`)
-     — verified against the current process where the answer is known.
-  2. **spawn_run + _watch** — drives a real (but tiny) subprocess that
+     - verified against the current process where the answer is known.
+  2. **spawn_run + _watch** - drives a real (but tiny) subprocess that
      either exits 0 or fails fast, and pins the DB-side state machine.
-  3. **recover_orphaned_runs** — exercises the startup-recovery path with
+  3. **recover_orphaned_runs** - exercises the startup-recovery path with
      a faked killer so no actual signals fly.
 
 Real subprocess tests are deliberately limited to short-lived (`true`/
@@ -63,13 +63,13 @@ def db_path(tmp_path, monkeypatch):
 
 
 # NOTE: the dashboard is Linux-only (see `dashboard/api/main.py:_require_linux`).
-# These tests run on Linux always — Mac/Windows operators run the test suite
+# These tests run on Linux always - Mac/Windows operators run the test suite
 # in the Docker container alongside the dashboard. No skipif markers needed.
 
 
 def test_pid_start_time_returns_string_for_current_process():
     """The current process MUST have a readable start time. If this returns
-    None, /proc/self isn't readable — a hard environment problem."""
+    None, /proc/self isn't readable - a hard environment problem."""
     st = pid_start_time(os.getpid())
     assert st is not None
     # Should be an integer string (clock ticks since boot).
@@ -77,7 +77,7 @@ def test_pid_start_time_returns_string_for_current_process():
 
 
 def test_pid_start_time_returns_none_for_missing_pid():
-    """Querying an obviously-dead PID must NOT raise — just return None.
+    """Querying an obviously-dead PID must NOT raise - just return None.
     Recovery code uses this to decide whether to attempt a kill."""
     # PID 1 always exists (init); use a PID guaranteed not to exist.
     # 2**22 is above the typical kernel.pid_max on most systems.
@@ -93,17 +93,17 @@ def test_pgid_alive_and_ours_for_current_process():
 
 
 def test_pgid_alive_and_ours_returns_false_for_dead_pgid():
-    """A PGID that isn't alive must NOT be killed — recovery returns False."""
+    """A PGID that isn't alive must NOT be killed - recovery returns False."""
     assert _pgid_alive_and_ours(2**22 - 1, "999999") is False
 
 
 def test_pgid_alive_and_ours_detects_recycled_pid():
     """If the recorded start time disagrees with /proc's current value, the
-    PID has been recycled by the OS for an unrelated process — must NOT
+    PID has been recycled by the OS for an unrelated process - must NOT
     be killed even though killpg(pgid, 0) succeeds."""
     pgid = os.getpgid(os.getpid())
     # Recorded a wildly different start time than the real one.
-    bogus_start = "1"  # 1 clock tick — definitely not us
+    bogus_start = "1"  # 1 clock tick - definitely not us
     assert _pgid_alive_and_ours(pgid, bogus_start) is False
 
 
@@ -146,7 +146,7 @@ def test_build_command_report_passes_comparator_data(db_path):
 
 
 # --------------------------------------------------------------------------- #
-# spawn_run + _watch — uses a tiny real subprocess                           #
+# spawn_run + _watch - uses a tiny real subprocess                           #
 # --------------------------------------------------------------------------- #
 
 
@@ -297,7 +297,7 @@ def test_recover_marks_running_row_interrupted_no_kill_when_pgid_dead(db_path):
             db_id=db_id,
             pid=2**22 - 1,
             pgid=2**22 - 1,
-            pid_start_time="999999",  # bogus — defines mismatch
+            pid_start_time="999999",  # bogus - defines mismatch
             started_at="01-01-2099 00:00:01",
         )
 
@@ -316,7 +316,7 @@ def test_recover_kills_pgid_when_alive_and_ours(db_path):
     """If the PGID is still alive AND the start time matches what we
     recorded, recovery MUST call the killer with that PGID."""
     rid = new_run_id()
-    pgid = os.getpgid(os.getpid())  # the test process's PGID — definitely alive
+    pgid = os.getpgid(os.getpid())  # the test process's PGID - definitely alive
     start = pid_start_time(os.getpid())
 
     with dbmod.connection_scope(db_path) as conn:
@@ -349,7 +349,7 @@ def test_recover_kills_pgid_when_alive_and_ours(db_path):
 
 
 def test_recover_handles_pending_row_with_no_pgid(db_path):
-    """A row that died in `pending` (subprocess never spawned) has no PGID —
+    """A row that died in `pending` (subprocess never spawned) has no PGID -
     recovery must mark it interrupted without crashing on the missing fields."""
     with dbmod.connection_scope(db_path) as conn:
         db_id = dbmod.insert_pending_run(
@@ -380,7 +380,7 @@ def test_recover_no_op_when_no_active_rows(db_path):
 
 
 # --------------------------------------------------------------------------- #
-# DB helper invariants — split from test_dashboard_db.py to keep that file   #
+# DB helper invariants - split from test_dashboard_db.py to keep that file   #
 # focused on the read-only slice's helpers.                                  #
 # --------------------------------------------------------------------------- #
 
@@ -500,7 +500,7 @@ def test_insert_pending_run_stores_args_and_command_as_json(db_path):
 
 
 # --------------------------------------------------------------------------- #
-# Round-3 regression tests — pin the C/H fixes from the third review.       #
+# Round-3 regression tests - pin the C/H fixes from the third review.       #
 # --------------------------------------------------------------------------- #
 
 
@@ -510,7 +510,7 @@ async def test_C1_watcher_task_is_strong_referenced(db_path, tmp_path, monkeypat
     weak-ref-only Task tracking can't garbage-collect it mid-execution.
 
     Pre-fix, `asyncio.create_task(_watch(...))`'s return value was
-    discarded — Python's docs warn this can let the task vanish. The C1
+    discarded - Python's docs warn this can let the task vanish. The C1
     fix tracks it in `runner._active_watchers` with `add_done_callback`
     cleanup. This test pins both halves: tracked while running, removed
     when done.
@@ -611,7 +611,7 @@ async def test_C2_spawn_handles_subprocess_exit_before_getpgid(
 async def test_C3_watcher_cancellation_writes_terminal_status(db_path, tmp_path):
     """If the watcher's `process.wait()` is cancelled (lifespan shutdown,
     explicit task cancellation), `mark_terminal` MUST still run and the
-    row MUST land at status='interrupted' — pre-fix the cancellation
+    row MUST land at status='interrupted' - pre-fix the cancellation
     skipped past the DB write and stranded the row in 'running'.
     """
     rid = new_run_id()
@@ -658,7 +658,7 @@ async def test_C3_watcher_cancellation_writes_terminal_status(db_path, tmp_path)
 
 def test_C4_recover_continues_when_killer_raises(db_path, monkeypatch):
     """If `killer(pgid)` raises (e.g. PermissionError on a process that
-    switched UID), recovery must NOT abort — the row still gets marked
+    switched UID), recovery must NOT abort - the row still gets marked
     interrupted and subsequent rows still get processed."""
     rid_1, rid_2 = new_run_id(), new_run_id()
     with dbmod.connection_scope(db_path) as conn:
@@ -714,7 +714,7 @@ def test_pgid_alive_and_ours_refuses_when_start_time_unrecorded():
     """If `recorded_start_time` is None (rare: /proc parse failure at
     spawn time), `_pgid_alive_and_ours` MUST return False even when
     killpg succeeds. Without the recorded value we can't verify identity,
-    so the safe default is "not ours" — a leaked subprocess on restart
+    so the safe default is "not ours" - a leaked subprocess on restart
     is recoverable; SIGTERM'ing an unrelated PGID after PID recycling is
     not."""
     pgid = os.getpgid(os.getpid())
@@ -740,7 +740,7 @@ def test_H2_shutdown_active_subprocesses_signals_each_pgid(monkeypatch):
 
     assert n == 3
     assert sorted(killed_pgids) == [1001, 1002, 1003]
-    # Set is drained — subsequent shutdown is a no-op.
+    # Set is drained - subsequent shutdown is a no-op.
     assert runner._active_pgids == set()
     assert runner.shutdown_active_subprocesses() == 0
 
@@ -820,7 +820,7 @@ async def test_H3_concurrency_semaphore_caps_simultaneous_spawns(
 
     # And the semaphore is fully released afterwards.
     runner._spawn_semaphore = asyncio.Semaphore(2)  # rebind for assertion shape
-    # (We don't introspect Semaphore internals — just verify subsequent
+    # (We don't introspect Semaphore internals - just verify subsequent
     # spawns don't deadlock, which the above gather already proved.)
 
     # Drain watcher tasks so the autouse fixture's invariant holds.
@@ -868,7 +868,7 @@ def test_recovery_leaves_db_atomic_under_unexpected_error(db_path, monkeypatch):
     with pytest.raises(RuntimeError, match="simulated"):
         recover_orphaned_runs(db_path, killer=lambda _: None)
 
-    # Both rows must STILL be in pending (rollback) — neither's transition
+    # Both rows must STILL be in pending (rollback) - neither's transition
     # got committed because the loop is wrapped in an explicit transaction.
     with dbmod.connection_scope(db_path) as conn:
         # The first row's mark_terminal succeeded but ROLLBACK reverted it.

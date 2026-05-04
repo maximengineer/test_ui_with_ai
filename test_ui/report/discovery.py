@@ -1,6 +1,6 @@
 """Discover per-URL comparator output and split into changed / unchanged buckets.
 
-Phase A.3 split — extracted from report/generator.py. Pure function over the
+Phase A.3 split - extracted from report/generator.py. Pure function over the
 filesystem; no AI, no network.
 
 **Phase B.1:** drills through `<comparator_root>/<date>/<run_id>/` to find
@@ -10,7 +10,7 @@ no run_id subdir is present, so the report stage keeps working against
 pre-B.1 comparator output during the migration grace period.
 
 **A.3 simplification (multi-signal-detection):** trusts
-`result.changes_detected` as the single source of truth — the pre-A.3 code
+`result.changes_detected` as the single source of truth - the pre-A.3 code
 OR-ed it against five per-category flags but a trace of
 `comparator/engine.py:_compare_single_site` confirmed those are all
 `any(...)`-ed into the top-level field already.
@@ -33,7 +33,7 @@ def discover_comparison_data(
     """Scan the latest comparator run for `date` and bucket URLs by whether they changed.
 
     Returns `{"with_changes": [...], "without_changes": [...]}`. Unreadable or
-    missing comparison_results.json files are logged and skipped, not raised —
+    missing comparison_results.json files are logged and skipped, not raised -
     one bad URL shouldn't kill the whole report.
 
     Resolution: looks under `<comparator_root>/<date>/`, drills to the latest

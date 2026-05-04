@@ -10,11 +10,11 @@ Why this exists:
     sees an empty list, which contradicts what `ls data/baseline/` shows.
   - Sync is idempotent (UNIQUE constraint on `run_id` swallows duplicates),
     so it's safe to call on every dashboard startup.
-  - It scans, not subscribes — a manifest written *after* sync ran needs
+  - It scans, not subscribes - a manifest written *after* sync ran needs
     a re-sync (`POST /api/sync`) or a dashboard restart to appear.
 
 Manifest status `complete` maps to dashboard status `done`. Any other
-manifest status (`running`, `failed`, `interrupted`) is preserved as-is —
+manifest status (`running`, `failed`, `interrupted`) is preserved as-is -
 they're already in our vocabulary. A `running` discovered run means the
 manifest was written by a CLI invocation that's still in flight; we don't
 adopt it (no PID/PGID means we can't manage its lifecycle), but we surface
@@ -37,7 +37,7 @@ from .db import insert_discovered_run
 
 def _kind_root(kind: str) -> Path:
     """Return the on-disk root for a kind. KeyError on typo (closed set)."""
-    # `[kind]` not `.get(kind)` — every caller iterates the closed tuple
+    # `[kind]` not `.get(kind)` - every caller iterates the closed tuple
     # of valid kinds, so a typo should explode loudly here rather than
     # silently return None and skip a whole kind.
     return {
@@ -55,7 +55,7 @@ def _safe_iterdir(p: Path) -> list[Path]:
     `rm -rf`'d by an operator, can vanish between our `.exists()` check
     and the actual iteration. Treat that as "no children" rather than
     bubbling a 500 from the API. PermissionError on a sub-tree owned
-    by root is the same idea — log it, return empty, keep going.
+    by root is the same idea - log it, return empty, keep going.
     """
     try:
         return list(p.iterdir())
@@ -84,7 +84,7 @@ def _scan_kind(kind: str) -> list[tuple[str, Path]]:
     # date dirs pointing to a network archive). Skipping symlinks would
     # break those legitimate setups, and the threat the skip would defend
     # against (a malicious symlink into /etc) is moot for a local-first
-    # dev tool whose data dir is operator-owned — anyone who can write to
+    # dev tool whose data dir is operator-owned - anyone who can write to
     # data/ can also write a manifest.json directly.
     for date_dir in _safe_iterdir(root):
         if not date_dir.is_dir():
@@ -120,7 +120,7 @@ def sync_runs(conn: sqlite3.Connection) -> tuple[int, int]:
     seen across all kinds; `inserted` is how many new rows landed (the
     rest were UNIQUE-conflict skips, which is the success path on a re-run).
 
-    Doesn't open its own connection — the caller passes one in so this
+    Doesn't open its own connection - the caller passes one in so this
     can run inside a request, in startup, or in a test fixture without
     each call knowing about `settings.runs_db_path`.
     """
@@ -134,7 +134,7 @@ def sync_runs(conn: sqlite3.Connection) -> tuple[int, int]:
             except Exception as e:
                 # Two cases land here:
                 #   1. Genuinely-corrupt manifest (operator should clean up).
-                #   2. Mid-write race — a CLI run is currently writing
+                #   2. Mid-write race - a CLI run is currently writing
                 #      manifest.json and we caught it half-flushed. Benign:
                 #      the next sync (manual or restart) will see the
                 #      complete file. This is the deliberate trade for not

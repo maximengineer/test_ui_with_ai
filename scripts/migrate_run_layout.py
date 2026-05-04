@@ -12,7 +12,7 @@ finder + discovery code treats it as a usable run.
 **Idempotent.** Re-running on an already-migrated tree is a no-op:
 
   - If `<date>/` already contains ULID-named subdirs (B.1 layout already
-    in place), the date is skipped entirely — never moves data twice.
+    in place), the date is skipped entirely - never moves data twice.
   - If a `<date>/` is empty or contains only the `latest` symlink and
     leftover state, also skipped.
 
@@ -117,7 +117,7 @@ def _legacy_url_dirs(date_dir: Path) -> list[Path]:
 def migrate_date_dir(kind: str, date_dir: Path, *, dry_run: bool = False) -> str | None:
     """Migrate one `<kind>/<date>/` to the run-id layout. Returns the new run_id, or None.
 
-    None means "nothing to do" — either already migrated, empty, or no url_dirs.
+    None means "nothing to do" - either already migrated, empty, or no url_dirs.
     """
     if _date_dir_already_migrated(date_dir):
         return None
@@ -127,7 +127,7 @@ def migrate_date_dir(kind: str, date_dir: Path, *, dry_run: bool = False) -> str
 
     # Synthesize a ULID with the date dir's mtime as timestamp (in ms).
     # This makes the migrated run sort correctly relative to any future
-    # B.1-native runs on the same date — older mtime → older ULID.
+    # B.1-native runs on the same date - older mtime → older ULID.
     mtime_seconds = date_dir.stat().st_mtime
     synthesized = ULID.from_timestamp(mtime_seconds)
     run_id = str(synthesized)
@@ -146,7 +146,7 @@ def migrate_date_dir(kind: str, date_dir: Path, *, dry_run: bool = False) -> str
     # Without this, an OSError on rename N of M leaves M-N url_dirs orphaned
     # at the date level AND no manifest in new_run_dir, so the next migration
     # invocation skips this date entirely (idempotency check returns True
-    # because the run_id subdir exists) — silently dropping the leftover URLs.
+    # because the run_id subdir exists) - silently dropping the leftover URLs.
     moved: list[tuple[Path, Path]] = []
     try:
         for url_dir in legacy_url_dirs:
@@ -171,11 +171,11 @@ def migrate_date_dir(kind: str, date_dir: Path, *, dry_run: bool = False) -> str
         # invocation doesn't see it and skip via the idempotency check.
         # `_date_dir_already_migrated` also now requires a manifest.json to
         # be present, so an orphan empty run_dir can't poison subsequent runs
-        # — but we still clean up to avoid debris.
+        # - but we still clean up to avoid debris.
         try:
             new_run_dir.rmdir()
         except OSError as rmdir_err:
-            # Non-empty (stray .tmp- or similar) — operator should investigate.
+            # Non-empty (stray .tmp- or similar) - operator should investigate.
             print(
                 f"    ⚠ could not remove orphan run_dir {new_run_dir}: {rmdir_err}",
                 file=sys.stderr,

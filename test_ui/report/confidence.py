@@ -2,7 +2,7 @@
 
 Pure functions. The composite confidence weights AI confidence (50%), data
 quality (30%), and analysis completeness (20%), then penalizes very small
-samples. The thresholds in `_determine_confidence_level` are heuristic — if
+samples. The thresholds in `_determine_confidence_level` are heuristic - if
 they're ever tightened, also revisit `html_renderer.build_template_data`'s
 "high if composite >= 0.8 else medium" check, which mirrors them.
 """
@@ -181,7 +181,7 @@ def _calculate_composite_confidence(
     """50% AI confidence + 30% data quality + 20% completeness, penalized for small samples."""
     base_score = ai_confidence * 0.5 + data_quality * 0.3 + analysis_completeness * 0.2
 
-    # Penalize tiny samples — 1 or 2 URLs isn't a real signal.
+    # Penalize tiny samples - 1 or 2 URLs isn't a real signal.
     if sample_size < 3:
         size_penalty = 0.1 * (3 - sample_size)
         base_score = max(0.0, base_score - size_penalty)

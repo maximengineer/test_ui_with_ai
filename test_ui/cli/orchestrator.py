@@ -1,4 +1,4 @@
-"""Orchestrator class — coordinates crawler, comparator, and report stages.
+"""Orchestrator class - coordinates crawler, comparator, and report stages.
 
 Split out of `cli.py` in the post-B.3 cleanup so the Click commands live
 elsewhere. Each method is a thin shell around an engine + the run_context
@@ -19,7 +19,7 @@ from ..report.generator import ReportGenerator
 
 
 # Local Console for orchestrator status messages. The Click commands have
-# their own Console in commands.py — sharing a single instance via import
+# their own Console in commands.py - sharing a single instance via import
 # would create a back-edge in the dependency graph for no real win
 # (Console() is cheap; both write to the same stdout).
 console = Console()
@@ -29,7 +29,7 @@ class Orchestrator:
     """Orchestrates the testing workflow.
 
     Construction requires an httpx.AsyncClient. Phase A.1.7 made client
-    ownership explicit at the CLI boundary — the Click command opens the
+    ownership explicit at the CLI boundary - the Click command opens the
     client via `async with`, passes it here, and the pool is cleanly closed
     when the orchestration ends. This eliminates the leak that existed when
     ReportGenerator was constructing its own client and never closing it.
@@ -79,12 +79,12 @@ class Orchestrator:
         B.2 precondition: refuses if either baseline or current has no
         complete run available. Pre-B.2 silently fell back to the kind root
         itself (which contains date dirs, not url dirs), causing every site
-        to report missing_baseline/missing_current — a confusing failure
+        to report missing_baseline/missing_current - a confusing failure
         mode replaced here with a single clear error.
         """
         from ..common.preconditions import PreconditionFailed
 
-        # output_dir is deprecated — comparator creates its own per-URL structure.
+        # output_dir is deprecated - comparator creates its own per-URL structure.
 
         actual_baseline_dir = self.comparator.find_latest_baseline(baseline_dir)
         if actual_baseline_dir is None:
@@ -143,7 +143,7 @@ class Orchestrator:
 
         Pre-B.1 took an `output_dir` parameter that was created but never
         actually written to (the report has always written under
-        `settings.report_dir`). Dropped here to remove confusion — callers
+        `settings.report_dir`). Dropped here to remove confusion - callers
         that need a separate output location should override `settings.report_dir`.
         """
         from ..common.preconditions import require_complete_run

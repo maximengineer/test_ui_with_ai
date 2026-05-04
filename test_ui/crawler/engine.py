@@ -458,7 +458,7 @@ async def main(
     the end (`status="complete"` plus file checksum + url_count).
 
     On any exception, the manifest is set to `status="failed"` and the
-    `.tmp-<run_id>` directory is left in place for inspection — readers
+    `.tmp-<run_id>` directory is left in place for inspection - readers
     skip it because of the `.tmp-` prefix (per `find_latest_run_dir_in_date`).
 
     The `use_date_structure` parameter is retained for backward compatibility
@@ -472,7 +472,7 @@ async def main(
     from ..config import settings
 
     if use_date_structure is False:
-        # Pre-A.0 escape hatch — write directly to output_dir, no run_id, no
+        # Pre-A.0 escape hatch - write directly to output_dir, no run_id, no
         # manifest. Kept for any test harness that pre-dates the date layout.
         # New code paths always take the date+run_id branch below.
         output_path = Path(output_dir)
@@ -497,10 +497,10 @@ async def main(
     kind = "baseline" if is_baseline else "current"
 
     # Refuse to start if a sibling .tmp- run for the same date holds a live
-    # lock — prevents two concurrent crawls clobbering shared state. Stale
+    # lock - prevents two concurrent crawls clobbering shared state. Stale
     # locks (dead PGID) are silently ignored so a previous SIGKILL doesn't
     # block forever.
-    # Validate run_id BEFORE acquiring the lock — a bogus run_id from a
+    # Validate run_id BEFORE acquiring the lock - a bogus run_id from a
     # misconfigured caller should fail fast, not after up to a 5s lock
     # wait. Comparator engine validates in the same position; aligning here.
     if run_id is None:
@@ -514,7 +514,7 @@ async def main(
 
     # Phase B.3.4: persist a run-invocation record outside the run dir so a
     # future dashboard / retry tool knows the parameters this was started
-    # with. Best-effort — failure logged, doesn't abort the crawl.
+    # with. Best-effort - failure logged, doesn't abort the crawl.
     write_run_record(
         run_id,
         kind=kind,
@@ -548,7 +548,7 @@ async def main(
         ctx.complete(url_count=crawled_count)
 
     # `latest` symlink update happens AFTER the rename so it points at the
-    # final path. Symlink failure is non-fatal — readers fall back to
+    # final path. Symlink failure is non-fatal - readers fall back to
     # scanning ULID dirs.
     final_run_dir = date_dir / run_id
     try:

@@ -1,12 +1,12 @@
-"""Comparator golden test (Phase A.2 — slow-marked).
+"""Comparator golden test (Phase A.2 - slow-marked).
 
 Drives `ComparatorEngine.compare_all` against a synthetic baseline/current
 directory pair laid out on disk. Pins the diff JSON outputs against goldens.
 
 What's checked:
-  - `diffs/html_changes.json` — byte-equal (after normalizing volatile fields)
-  - `diffs/change_summary.json` — SSIM-tolerant compare (float fields → approx)
-  - `diffs/visual_diff.png` — existence + size-bounds only (binary content
+  - `diffs/html_changes.json` - byte-equal (after normalizing volatile fields)
+  - `diffs/change_summary.json` - SSIM-tolerant compare (float fields → approx)
+  - `diffs/visual_diff.png` - existence + size-bounds only (binary content
     drifts with OpenCV/skimage versions; pinned versions in pyproject.toml
     keep this stable but we don't byte-compare to be safe)
 
@@ -14,7 +14,7 @@ What's NOT checked: `comparison_results.json` (per-tmp-dir paths in metadata
 make it noisy; the diff JSONs are the AI-facing surface and worth pinning).
 
 Marked `@pytest.mark.slow` because importing cv2/skimage and running SSIM
-costs a few hundred ms — the fast suite skips it by default. Run with
+costs a few hundred ms - the fast suite skips it by default. Run with
 `pytest -m slow`.
 """
 
@@ -127,7 +127,7 @@ def test_comparator_golden_html_changes(comparator_test_setup, golden_compare):
 
 
 def test_comparator_golden_change_summary(comparator_test_setup, golden_compare):
-    """Pin diffs/change_summary.json — float SSIM fields rounded for stability;
+    """Pin diffs/change_summary.json - float SSIM fields rounded for stability;
     `affected_components` sorted because the producer uses `list(set(...))`
     which has non-deterministic iteration order. Flagged for A.3 to fix the
     producer side."""
@@ -144,7 +144,7 @@ def test_comparator_golden_change_summary(comparator_test_setup, golden_compare)
 
 
 def test_comparator_visual_diff_exists_and_reasonable_size(comparator_test_setup):
-    """visual_diff.png — existence + 1KB-1MB range, not byte-equality."""
+    """visual_diff.png - existence + 1KB-1MB range, not byte-equality."""
     setup = comparator_test_setup
     engine = ComparatorEngine()
     engine.compare_all(setup["baseline"], setup["current"], [{"url": setup["url"]}])
@@ -176,7 +176,7 @@ def test_comparator_other_diff_files_exist(comparator_test_setup):
 # ---------------------------------------------------------------------------
 # Phase B.3: per-site dir naming derives from `site["id"]`, not the URL.
 # The other golden tests above pass `[{"url": ...}]` (no id) which exercises
-# the legacy `url_to_dirname` fallback. This test pins the NEW path —
+# the legacy `url_to_dirname` fallback. This test pins the NEW path -
 # fixture seeds dirs by id, comparator looks them up by id.
 # ---------------------------------------------------------------------------
 
@@ -190,7 +190,7 @@ def comparator_id_setup(tmp_path, monkeypatch):
     output_dir.mkdir()
     monkeypatch.setattr(settings, "comparator_dir", output_dir)
 
-    site_id = "homepage-prod"  # explicit id — the post-B.3 contract
+    site_id = "homepage-prod"  # explicit id - the post-B.3 contract
     url = "https://demo.example.com/about/"  # url has nothing to do with the dir name
     baseline_html = (
         "<html><head><title>X</title></head><body><p>before</p></body></html>"
@@ -213,7 +213,7 @@ def test_comparator_uses_site_id_for_dir_lookup(comparator_id_setup):
     """B.3 contract: when a site dict carries `id`, the comparator looks for
     `<baseline>/<site.id>/` regardless of the URL. Pinning this catches a
     regression where someone reverts the lookup to `url_to_dirname(url)`
-    — that would yield 'demo.example.com_about' here, NOT find the seeded
+    - that would yield 'demo.example.com_about' here, NOT find the seeded
     'homepage-prod' dir, and report missing_baseline for every site."""
     setup = comparator_id_setup
     engine = ComparatorEngine()
@@ -229,4 +229,4 @@ def test_comparator_uses_site_id_for_dir_lookup(comparator_id_setup):
         / setup["site_id"]
         / "diffs"
     )
-    assert diffs_dir.exists(), f"no diffs/ found at {diffs_dir} — id-based dir not used"
+    assert diffs_dir.exists(), f"no diffs/ found at {diffs_dir} - id-based dir not used"

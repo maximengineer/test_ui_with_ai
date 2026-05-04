@@ -3,7 +3,7 @@
 Wraps the POST /api/compare contract. Owns:
 - The httpx.AsyncClient (passed in by the CLI; this class never closes it).
 - A semaphore bounding in-flight requests (configurable via
-  AFR_AI_CONCURRENCY) — prevents quota exhaustion when many URLs run
+  AFR_AI_CONCURRENCY) - prevents quota exhaustion when many URLs run
   concurrently.
 - The retry loop, which honors HTTP 429 Retry-After when present and falls
   back to exponential backoff otherwise.
@@ -62,7 +62,7 @@ class AIClient:
 
         The loader's screenshots dict uses *_b64 / *_path keys; only the b64
         bodies belong on the wire. Loader-only structured-data keys
-        (metadata, visual_diff_image path) are dropped — the contract only
+        (metadata, visual_diff_image path) are dropped - the contract only
         carries the four typed change blocks.
         """
         sshots = Screenshots(
@@ -116,7 +116,7 @@ class AIClient:
                     )
 
                 # Acquire the semaphore around the network call only. Sleeps
-                # don't hold the slot — concurrent retries should be bounded
+                # don't hold the slot - concurrent retries should be bounded
                 # by in-flight requests, not by total elapsed time.
                 async with self.semaphore:
                     response = await self.client.post(
@@ -125,7 +125,7 @@ class AIClient:
                         timeout=120.0,
                     )
 
-                # Don't raise_for_status — server returns typed error bodies
+                # Don't raise_for_status - server returns typed error bodies
                 # on 4xx/5xx and we want to parse them.
                 try:
                     body = response.json()
@@ -174,7 +174,7 @@ class AIClient:
                     return parsed.model_dump(mode="json")
 
                 # Server returned a marker type (no_changes / ai_disabled) on
-                # the wire — that should never happen; the server doesn't own
+                # the wire - that should never happen; the server doesn't own
                 # those semantics.
                 logger.error(
                     f"AI analyzer returned unexpected result_type for {url}: {parsed.result_type}"
@@ -230,7 +230,7 @@ class AIClient:
         """Read the Retry-After header. Returns seconds, or None if absent/unparseable.
 
         Supports the integer-seconds form (`Retry-After: 30`). Doesn't parse the
-        HTTP-date form (`Retry-After: Wed, 21 Oct 2015 07:28:00 GMT`) — rare in
+        HTTP-date form (`Retry-After: Wed, 21 Oct 2015 07:28:00 GMT`) - rare in
         practice; falling back to exponential backoff is acceptable.
         """
         if response is None:
@@ -252,7 +252,7 @@ class AIClient:
 
         Used when the server didn't respond with a parseable typed body. For
         server-returned errors (typed AIAnalysisError on the wire), we return
-        the parsed body directly — this helper only manufactures the error
+        the parsed body directly - this helper only manufactures the error
         envelope ourselves.
         """
         return AIAnalysisError(

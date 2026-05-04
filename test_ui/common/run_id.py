@@ -8,7 +8,7 @@ Why ULID over UUID4: ULIDs are sortable by creation time (the first 48 bits
 are a millisecond timestamp), so a `sorted(os.listdir(date_dir))` puts runs
 in chronological order without needing to read manifests. They're also
 URL-safe (Crockford base32, no dashes) and shorter than UUIDs (26 vs 36
-chars) — easier to copy-paste.
+chars) - easier to copy-paste.
 
 The `python-ulid` lib's `ULID()` constructor uses os.urandom for entropy
 so collisions within the same millisecond are statistically impossible

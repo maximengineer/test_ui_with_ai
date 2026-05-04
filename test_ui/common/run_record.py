@@ -1,7 +1,7 @@
 """Per-run invocation record (Phase B.3.4).
 
 Every run (crawl, comparator, report) writes a small JSON file at
-`data/runs/<run_id>.run.json` describing **how it was started** —
+`data/runs/<run_id>.run.json` describing **how it was started** -
 the full command, parsed args, kind, and start timestamp.
 
 Why separate from `manifest.json`?
@@ -14,7 +14,7 @@ Why separate from `manifest.json`?
   - The split lets us keep the manifest canonical even if the run dir gets
     renamed/migrated/archived.
 
-The record is best-effort — failure to write it is logged but doesn't
+The record is best-effort - failure to write it is logged but doesn't
 abort the run (the actual work has already started).
 """
 
@@ -56,7 +56,7 @@ def write_run_record(
 ) -> Path:
     """Persist `<runs_log_dir>/<run_id>.run.json`. Returns the written path.
 
-    Best-effort — logs WARNING and returns the would-be path on any I/O
+    Best-effort - logs WARNING and returns the would-be path on any I/O
     error so the caller's run isn't aborted by an inability to record
     metadata. The dashboard can detect a missing record by scanning the
     runs/ dir.
@@ -78,7 +78,7 @@ def write_run_record(
         runs_dir.mkdir(parents=True, exist_ok=True)
         out_path.write_text(record.model_dump_json(indent=2), encoding="utf-8")
     except OSError as e:
-        # Don't propagate — the run itself is more important than the record.
+        # Don't propagate - the run itself is more important than the record.
         logger.warning(f"Could not write run record at {out_path}: {e}")
     return out_path
 

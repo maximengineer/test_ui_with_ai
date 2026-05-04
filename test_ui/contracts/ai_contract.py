@@ -29,7 +29,7 @@ class _StrictModel(BaseModel):
 
 
 # ============================================================================
-# Input — structured comparator data (matches docs/data_shapes.md)
+# Input - structured comparator data (matches docs/data_shapes.md)
 # ============================================================================
 #
 # The inner `changes` lists carry per-change records whose shape varies by
@@ -103,7 +103,7 @@ class AIAnalysisRequest(_StrictModel):
 
 
 # ============================================================================
-# Response variants — discriminated union by `result_type`
+# Response variants - discriminated union by `result_type`
 # ============================================================================
 
 
@@ -165,7 +165,7 @@ class AIAnalysisError(_StrictModel):
 class NoChangesMarker(_StrictModel):
     """Comparator detected no changes for this URL. AI was not invoked.
 
-    Distinct from AIAnalysisResponse(severity=SAFE) — that would imply the AI
+    Distinct from AIAnalysisResponse(severity=SAFE) - that would imply the AI
     looked at the page and decided it was safe. This says the AI never looked
     because there was nothing to look at.
     """

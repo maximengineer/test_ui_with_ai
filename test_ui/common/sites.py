@@ -4,7 +4,7 @@ A site is `{id, name, url}` where `id` is the **stable identifier** the rest
 of the pipeline uses for per-site directory names (e.g.
 `data/baseline/<date>/<run_id>/<id>/`). Naming the data dirs by `id` instead
 of by URL means a URL change (e.g. site moves from `/about` to `/about-us`)
-keeps history continuous — same id, same data path, comparator can still
+keeps history continuous - same id, same data path, comparator can still
 diff baseline vs. current.
 
 `name` is human-facing display text. It can change freely without touching
@@ -17,7 +17,7 @@ on-disk identifiers.
     pointing the operator at `scripts/migrate_sites_ids.py` to write the
     ids back to disk.
   - If `name` is also missing or empty, we fall back to slugifying the URL
-    via `url_to_dirname` so the loader never raises on legacy data — but
+    via `url_to_dirname` so the loader never raises on legacy data - but
     the warning is more strident.
   - The Pydantic model itself REQUIRES `id` and rejects unknown fields, so
     drift in either direction (typo, dropped field) is loud.
@@ -44,7 +44,7 @@ _SLUG_RE = re.compile(r"[^a-z0-9]+")
 def slugify(value: str) -> str:
     """Lowercase + replace non-alphanumeric with `-` + collapse + strip.
 
-    Stable, deterministic, ASCII-only. Doesn't try to romanize Unicode —
+    Stable, deterministic, ASCII-only. Doesn't try to romanize Unicode -
     operators with non-ASCII names should set `id:` explicitly.
     """
     out = _SLUG_RE.sub("-", value.lower()).strip("-")
@@ -61,8 +61,8 @@ class Site(BaseModel):
     migrations) that bypass the loader.
 
     `max_length` caps are generous-but-bounded: 200 for name (display
-    text — anything longer is a copy-paste accident), 2048 for url
-    (the practical HTTP URL ceiling — RFC 7230 doesn't impose one but
+    text - anything longer is a copy-paste accident), 2048 for url
+    (the practical HTTP URL ceiling - RFC 7230 doesn't impose one but
     most stacks do). Stops a 10MB-name DoS from bloating sites.yml
     and slowing down every subsequent load.
     """
@@ -80,7 +80,7 @@ def dedupe_slug(candidate: str, taken: set[str]) -> str:
     The single source of truth for the suffix scheme. `load_sites` uses it
     to auto-generate ids at runtime; `scripts/migrate_sites_ids.py` uses
     the same function so the loader and the migration script produce
-    identical ids for the same input — without a shared helper they would
+    identical ids for the same input - without a shared helper they would
     silently desync if either side changed the suffix style.
     """
     if candidate not in taken:
@@ -98,7 +98,7 @@ def _coerce_to_site(raw: dict, *, taken_ids: set[str]) -> Site:
     behavior) so loader and migration produce identical ids for the same
     file. After normalization, the **full** dict is passed through
     `Site.model_validate` so Pydantic's `extra='forbid'` catches typos like
-    `idd:` or `urll:` — which would otherwise silently drop and the loader
+    `idd:` or `urll:` - which would otherwise silently drop and the loader
     would auto-generate a (probably wrong) id from `name`.
 
     Mutates `taken_ids` to register the resolved id.
@@ -163,12 +163,12 @@ def load_sites(path: str | Path) -> list[Site]:
 
 
 # --------------------------------------------------------------------------- #
-# CRUD (Phase C.2 — dashboard slice).                                         #
+# CRUD (Phase C.2 - dashboard slice).                                         #
 # --------------------------------------------------------------------------- #
 #
 # These helpers mutate `sites.yml` for the dashboard's POST/PATCH/DELETE
 # routes. They use `ruamel.yaml` round-trip mode so operator-authored
-# comments survive the round-trip — `yaml.safe_dump` would silently drop
+# comments survive the round-trip - `yaml.safe_dump` would silently drop
 # them, which is the worst kind of UX regression for an ops-edited file.
 #
 # Writes are atomic (`tmp + rename`) so a crash mid-write can't leave a
@@ -176,7 +176,7 @@ def load_sites(path: str | Path) -> list[Site]:
 
 
 # Note: there is intentionally NO `SiteAlreadyExists` exception. The Site
-# CRUD doesn't expose `id` as a client-settable field — `add_site` always
+# CRUD doesn't expose `id` as a client-settable field - `add_site` always
 # auto-generates the id by slugifying `name` and appending a numeric
 # suffix on collision (`-2`, `-3`, …). So an "id already exists" condition
 # is structurally impossible from the public API. Two sites with the same
@@ -211,7 +211,7 @@ def _atomic_write_yaml(path: Path, data) -> None:
 
     Uses ruamel's dump so round-trip-preserved structures (comments,
     quote styles) survive. The tmp file goes in the same directory so the
-    rename stays atomic — across-filesystem renames are NOT atomic and
+    rename stays atomic - across-filesystem renames are NOT atomic and
     would defeat the point.
     """
     yaml_rt = _ruamel_yaml()
@@ -236,7 +236,7 @@ def _load_for_mutation(path: Path):
     with path.open(encoding="utf-8") as f:
         data = yaml_rt.load(f) or {}
     if "sites" not in data or data["sites"] is None:
-        # File exists but `sites:` is empty/missing — initialize so callers
+        # File exists but `sites:` is empty/missing - initialize so callers
         # can append without a None-check. ruamel's CommentedSeq behaves
         # like a list for our purposes.
         data["sites"] = []
@@ -247,7 +247,7 @@ def _verify_full_load(path: Path) -> None:
     """Ensure the post-write file still loads cleanly via `load_sites`.
 
     Defends against a write that succeeded structurally but produced a
-    file that the read path can't validate — e.g. a pre-existing entry
+    file that the read path can't validate - e.g. a pre-existing entry
     with an invalid id pattern that wasn't a problem until our write
     forced a re-validate. We deliberately call this with the strict
     Pydantic loader so any latent corruption is surfaced immediately
@@ -258,7 +258,7 @@ def _verify_full_load(path: Path) -> None:
 
 def _atomic_rollback(path: Path, original_bytes: bytes | None) -> None:
     """Restore `path` to `original_bytes` (or remove it if it didn't
-    exist before the failed write). Atomic via tmp+rename — a crash
+    exist before the failed write). Atomic via tmp+rename - a crash
     mid-rollback can't leave the file half-overwritten.
 
     Round-3 review caught that the previous rollback used a plain
@@ -267,7 +267,7 @@ def _atomic_rollback(path: Path, original_bytes: bytes | None) -> None:
     pattern below matches `_atomic_write_yaml`'s atomicity guarantee.
     """
     if original_bytes is None:
-        # File didn't exist pre-write — undo by removing.
+        # File didn't exist pre-write - undo by removing.
         path.unlink(missing_ok=True)
         return
     tmp = path.with_suffix(path.suffix + ".rollback")
@@ -282,7 +282,7 @@ def _atomic_rollback(path: Path, original_bytes: bytes | None) -> None:
 def _verify_or_rollback(path: Path, original_bytes: bytes | None) -> None:
     """Run `_verify_full_load(path)`. On failure, atomically restore
     `original_bytes` and re-raise. Shared between `add_site` and
-    `delete_site` (round-3 #M5 made this symmetric — pre-fix only
+    `delete_site` (round-3 #M5 made this symmetric - pre-fix only
     `add_site` rolled back, leaving `delete` to wedge the file in
     a permanently-unloadable state on pre-existing corruption).
     """
@@ -295,13 +295,13 @@ def _verify_or_rollback(path: Path, original_bytes: bytes | None) -> None:
 
 def add_site(path: Path, *, name: str, url: str) -> Site:
     """Append a new site. The id is auto-derived from `slugify(name)` with
-    a numeric `-N` suffix on collision — see `dedupe_slug`. There is no
+    a numeric `-N` suffix on collision - see `dedupe_slug`. There is no
     "id already exists" failure mode by design (see the SiteNotFound
     block comment above for the rationale).
 
     Validates name + url via the `Site` Pydantic model BEFORE touching
     the file, so an empty/invalid input fails fast. After the atomic
-    write succeeds, ALSO does a full `load_sites(path)` round-trip — if
+    write succeeds, ALSO does a full `load_sites(path)` round-trip - if
     a pre-existing entry was already corrupt, the write that reformatted
     the file will surface it now. Rolls back the write on validation
     failure.
@@ -336,7 +336,7 @@ def update_site(
 ) -> Site:
     """Mutate `name` and/or `url` on the site with `site_id`.
 
-    `id` is intentionally immutable — changing it would invalidate every
+    `id` is intentionally immutable - changing it would invalidate every
     existing data dir for that site (per-site dirs are named by id), and
     the dashboard surfaces this as 404 if the operator tries to PATCH a
     different id. To "rename" the id, delete + re-create.
@@ -347,7 +347,7 @@ def update_site(
     No "no-op fast path" for `name=None, url=None`: the previous version
     short-circuited via `load_sites` (a heavier full re-validation than
     the rewrite path it claimed to optimize). The single-pass approach
-    here is faster AND simpler — finds the entry via the in-memory
+    here is faster AND simpler - finds the entry via the in-memory
     parse from `_load_for_mutation`, returns it as-is without rewriting
     when nothing actually changed.
     """
@@ -356,7 +356,7 @@ def update_site(
         if isinstance(entry, dict) and entry.get("id") == site_id:
             new_name = name if name is not None else entry["name"]
             new_url = url if url is not None else entry["url"]
-            # Re-validate through the model — catches an empty new url, etc.
+            # Re-validate through the model - catches an empty new url, etc.
             validated = Site(id=site_id, name=new_name, url=new_url)
             # Skip the write if nothing actually changed. Cheaper than
             # rewriting + safer (preserves mtime so file watchers don't
@@ -379,7 +379,7 @@ def delete_site(path: Path, site_id: str) -> None:
 
     Rolls back the write if the resulting file fails to load (e.g. a
     pre-existing entry has invalid id pattern that round-tripping
-    exposed). Round-3 review #M5 caught the asymmetry — `add_site` had
+    exposed). Round-3 review #M5 caught the asymmetry - `add_site` had
     rollback but `delete_site` didn't.
     """
     data = _load_for_mutation(path)
@@ -402,7 +402,7 @@ def site_dir_name(site: dict | Site) -> str:
     tests that pass `{url, name}` dicts without an id.
 
     Centralized here so the crawler + comparator can't drift on the
-    naming convention — both depend on this returning identical values
+    naming convention - both depend on this returning identical values
     for the same site (otherwise baseline/current/comparator runs can't
     find each other's outputs).
     """

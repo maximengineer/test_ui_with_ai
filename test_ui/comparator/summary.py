@@ -2,11 +2,11 @@
 
 Consumes the per-category results (screenshot/dom/css/js/media) and produces
 the `change_summary.json` shape that flows into AI prompts. Severity logic is
-heuristic, not normative — see Implementation Flag "multi-signal change
+heuristic, not normative - see Implementation Flag "multi-signal change
 detection" in REFACTOR_AND_DASHBOARD_PLAN.md for the planned overhaul.
 
 Behaviour preserved verbatim from the pre-split engine to keep Phase A.2
-goldens passing — except `affected_components`, which is now `sorted()` to
+goldens passing - except `affected_components`, which is now `sorted()` to
 fix non-deterministic set iteration (was a known A.2 flake source).
 """
 
@@ -105,7 +105,7 @@ def create_change_summary_json(
                 "visual_changes": visual_changes,
                 "layout_shifts": screenshot_result.get("dimensions_changed", False),
             },
-            # A.3 fix — was reading flat keys (title_changed / content_changed /
+            # A.3 fix - was reading flat keys (title_changed / content_changed /
             # structure_changed) that dom.compare_dom never emits; result was
             # always all-False even when those things had clearly changed.
             # dom.compare_dom emits nested objects; read them directly.
@@ -126,7 +126,7 @@ def create_change_summary_json(
                 "asset_changes": media_changes,
             },
         },
-        # sorted() not just for stability — affected_components flows into
+        # sorted() not just for stability - affected_components flows into
         # change_summary.json (a Phase A.2 golden) and into AI prompts.
         # Set iteration order is implementation-defined → non-reproducible runs.
         "affected_components": sorted(set(affected_components)),

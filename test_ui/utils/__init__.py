@@ -1,4 +1,4 @@
-"""Deprecated shim — moved to test_ui.common.images in Phase A.3.
+"""Deprecated shim - moved to test_ui.common.images in Phase A.3.
 
 Kept as a re-export so any external code importing from `test_ui.utils`
 doesn't silently break. Remove on the next major version bump.

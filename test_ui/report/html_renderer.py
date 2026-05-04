@@ -11,7 +11,7 @@ edit it without touching Python.
    read `aggregation.confidence_metrics.average_confidence` /
    `min_confidence` / `max_confidence`, but `calculate_confidence_metrics`
    actually emits `confidence_metrics.ai_confidence.{average,min,max}`. The
-   old paths raised UndefinedError on every render — undetected because no
+   old paths raised UndefinedError on every render - undetected because no
    end-to-end run had ever fully completed before A.1.
 
 2. `result_type` discriminator now drives the per-URL section. Pre-A.3 the
@@ -77,7 +77,7 @@ def build_template_data(
         "has_critical": summary.get("critical_issues", 0) > 0,
         "has_warnings": summary.get("warnings", 0) > 0,
         "has_errors": summary.get("errors", 0) > 0,
-        # Composite is the right confidence signal for the header chip — it
+        # Composite is the right confidence signal for the header chip - it
         # already weights ai_confidence + data_quality + completeness.
         "confidence_level": "high" if composite >= 0.8 else "medium",
         "system_status": determine_system_status(aggregated_analysis),

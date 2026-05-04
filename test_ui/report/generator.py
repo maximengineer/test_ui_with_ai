@@ -1,4 +1,4 @@
-"""Report orchestrator (Phase A.3 — slimmed from 1735 LOC god-object).
+"""Report orchestrator (Phase A.3 - slimmed from 1735 LOC god-object).
 
 All heavy lifting now lives in sibling modules:
 - discovery.py    → scan comparator output, bucket URLs by changed/unchanged
@@ -9,7 +9,7 @@ All heavy lifting now lives in sibling modules:
 
 This module just walks the URL list, dispatches to those modules, persists
 the four mutually-exclusive per-URL result files, and writes the final HTML
-report. Don't add new domain logic here — push it into the appropriate sibling.
+report. Don't add new domain logic here - push it into the appropriate sibling.
 """
 
 from __future__ import annotations
@@ -34,11 +34,11 @@ class ReportGenerator:
     def __init__(self, config, gemini_url: str, client: httpx.AsyncClient):
         """The caller (Orchestrator) owns the httpx.AsyncClient lifecycle.
 
-        Phase A.1.7 — client is constructed at the asyncio.run() boundary and
+        Phase A.1.7 - client is constructed at the asyncio.run() boundary and
         passed in here so the connection pool is cleanly released. Was previously
         constructed (and never closed) by this class.
 
-        Phase A.1.10 — AIClient owns the per-instance semaphore that caps
+        Phase A.1.10 - AIClient owns the per-instance semaphore that caps
         in-flight AI requests (default 3, AFR_AI_CONCURRENCY env override).
         """
         self.config = config
@@ -63,7 +63,7 @@ class ReportGenerator:
         Phase B.1: writes go into `<run_root>/<url_name>/`. The orchestrator
         owns `run_root` (the atomic-publication tmp dir) and passes it in.
 
-        Phase A.1.9 — replaces the old synthetic SAFE-severity blob (which
+        Phase A.1.9 - replaces the old synthetic SAFE-severity blob (which
         falsely implied AI looked at the URL and decided it was safe) with a
         marker that records "AI was not invoked because there was nothing to
         analyze."
@@ -102,7 +102,7 @@ class ReportGenerator:
         # AFR_AI_ENABLED=false short-circuits before any AI call. Used for
         # sensitive sites where DOM/screenshots shouldn't leave the local
         # network. Distinct from no_changes (which means the comparator found
-        # nothing) — ai_disabled means we deliberately chose not to ask.
+        # nothing) - ai_disabled means we deliberately chose not to ask.
         if not settings.ai_enabled:
             marker = AIDisabledMarker(
                 checked_at=settings.get_current_datetime()

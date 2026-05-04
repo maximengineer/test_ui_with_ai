@@ -48,7 +48,7 @@ dependencies = [
     "ruamel-yaml>=0.19.1,<0.20.0",
     # Dashboard (Milestone C). FastAPI for the API layer, uvicorn for
     # serving. stdlib `sqlite3` is used for the runs DB (WAL mode,
-    # per-request connection) rather than aiosqlite — FastAPI runs sync
+    # per-request connection) rather than aiosqlite - FastAPI runs sync
     # routes in a threadpool, and the dashboard is single-machine local-
     # first, so the simpler sync API wins.
     "fastapi>=0.121.0,<0.122.0",
@@ -58,7 +58,7 @@ dependencies = [
 [project.scripts]
 afr = "test_ui.cli:cli"
 
-# `[tool.poetry]` deliberately empty — Poetry 2.x reads name/version/etc.
+# `[tool.poetry]` deliberately empty - Poetry 2.x reads name/version/etc.
 # from `[project]`. Kept as an explicit marker so a future contributor
 # doesn't try to re-add deprecated keys here.
 [tool.poetry]

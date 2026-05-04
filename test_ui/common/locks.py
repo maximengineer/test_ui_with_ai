@@ -4,14 +4,14 @@ A run-in-progress writes `<run_root>/.lock` containing
 `{pid, pgid, hostname, started_at, command}`. The lock is removed on clean
 completion (before atomic publication, so the final published run dir
 contains no `.lock`). On hard kill (SIGKILL, OOM, host crash) the lock
-stays in the orphaned `.tmp-<run_id>/` dir — future runs inspect it,
+stays in the orphaned `.tmp-<run_id>/` dir - future runs inspect it,
 verify the holding PGID is dead via `os.kill(pgid, 0)` + `/proc/<pid>/stat`
 start-time check (Linux), and proceed (logging a warning).
 
 **Concurrency model.** Lock check + take is NOT atomic across processes
-(no `flock` here — the file lives inside an atomic publication tmp dir
+(no `flock` here - the file lives inside an atomic publication tmp dir
 that's already unique per run_id). This is fine because the kind+date
-precondition check at the CLI level is the real arbiter — the lock file
+precondition check at the CLI level is the real arbiter - the lock file
 is for after-the-fact diagnostics ("which PID is currently crawling?")
 and stale-run detection, not mutual exclusion.
 
@@ -75,7 +75,7 @@ class LockHeldError(RuntimeError):
 def _read_proc_starttime(pid: int) -> int | None:
     """Return field 22 of /proc/<pid>/stat (starttime in jiffies since boot).
 
-    Returns None on non-Linux platforms, missing PID, or any read error —
+    Returns None on non-Linux platforms, missing PID, or any read error -
     callers fall back to the os.kill(pgid, 0) check alone, accepting the
     small PID-recycling risk on those platforms.
     """
@@ -84,7 +84,7 @@ def _read_proc_starttime(pid: int) -> int | None:
         return None
     try:
         # Field 2 is the comm name in parentheses and may itself contain
-        # spaces / parens — split on the LAST `)` to skip past it cleanly.
+        # spaces / parens - split on the LAST `)` to skip past it cleanly.
         raw = proc_path.read_text(encoding="utf-8")
         after_comm = raw.rsplit(")", 1)[1]
         # After-comm fields are space-separated. Field 22 in the original
@@ -98,18 +98,18 @@ def _read_proc_starttime(pid: int) -> int | None:
 def is_pgid_alive(pgid: int, recorded_proc_starttime: int | None = None) -> bool:
     """Check whether the process group `pgid` has any live members.
 
-    Uses `os.killpg(pgid, 0)` (POSIX `kill(-pgid, 0)`) — the GROUP variant —
+    Uses `os.killpg(pgid, 0)` (POSIX `kill(-pgid, 0)`) - the GROUP variant -
     so we correctly detect "a child is still working even though the group
     leader exited." Plain `os.kill(pgid, 0)` would only check the leader's
     PID and miss orphan children that inherited the group.
 
     Returns False (safe to take over) on ProcessLookupError. PermissionError
-    means the group exists but is owned elsewhere — conservatively assume
+    means the group exists but is owned elsewhere - conservatively assume
     alive and refuse to take over.
 
     If `recorded_proc_starttime` is non-None we ALSO read /proc/<pgid>/stat
     (the leader's stat) and compare. Mismatch means the original leader's
-    PID was recycled — treat as dead. If the leader is gone but children
+    PID was recycled - treat as dead. If the leader is gone but children
     are alive, /proc/<pgid>/stat may not exist; we then trust killpg's
     "alive" result.
     """
@@ -129,7 +129,7 @@ def is_pgid_alive(pgid: int, recorded_proc_starttime: int | None = None) -> bool
     if recorded_proc_starttime is not None:
         current = _read_proc_starttime(pgid)
         if current is not None and current != recorded_proc_starttime:
-            return False  # leader PID recycled — original group is gone
+            return False  # leader PID recycled - original group is gone
 
     return True
 
@@ -174,7 +174,7 @@ def write_lock(run_dir: Path, command: str) -> LockFile:
 def read_lock(run_dir_or_path: Path) -> LockFile | None:
     """Read `.lock` from a run dir (or pass the lock-file path directly).
 
-    Returns None if no lock file exists or it fails to parse — corrupt
+    Returns None if no lock file exists or it fails to parse - corrupt
     locks are treated as not-held so a manual cleanup attempt won't be
     blocked by a parse error.
     """
@@ -196,7 +196,7 @@ def remove_lock(run_dir: Path) -> None:
     """Remove `<run_dir>/.lock`. Silent if already absent.
 
     Raises on ANY other OSError (permission denied, RO mount, NFS hiccup).
-    This is deliberate — a leaked lock would be silently published into the
+    This is deliberate - a leaked lock would be silently published into the
     final run dir if we swallowed the error here, and downstream tools
     looking for live locks only scan `.tmp-*/` siblings (not published
     dirs), so the leak would be invisible. Failing loudly forces the
@@ -212,7 +212,7 @@ def remove_lock(run_dir: Path) -> None:
 def acquire_lock(run_dir: Path, command: str) -> Iterator[LockFile]:
     """Context manager: write the lock on enter, remove on exit.
 
-    Always removes the lock — including on exception — so the post-failure
+    Always removes the lock - including on exception - so the post-failure
     state of `<.tmp-run_id>/` doesn't include a stale lock. The atomic-
     publication tmp dir's presence (without a lock) is itself the signal
     that a run failed and someone should look.

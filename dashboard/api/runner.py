@@ -23,11 +23,11 @@ captures the PID/PGID, and watches for exit. This split is deliberate:
 
   - **PID recycling defense**: `pid_start_time` (from /proc/<pid>/stat
     field 22) is recorded at spawn. At restart-recovery we re-read /proc
-    and refuse to SIGTERM a PGID whose leader's start time has changed —
+    and refuse to SIGTERM a PGID whose leader's start time has changed -
     that means the OS recycled the PID for an unrelated process, and
     killing it would be a footgun.
 
-This module is pure machinery — routes live in `routes.py`. The split
+This module is pure machinery - routes live in `routes.py`. The split
 keeps the routes file thin and the subprocess code testable in isolation.
 """
 
@@ -67,7 +67,7 @@ _KIND_TO_CLI_COMMAND: dict[str, str] = {
 
 # Strong references to in-flight watcher Tasks. asyncio's event loop only
 # keeps WEAK references to tasks created via `create_task`, so an
-# unreferenced task can be garbage-collected mid-await — silently leaving
+# unreferenced task can be garbage-collected mid-await - silently leaving
 # the row stuck in `running` for the next startup recovery to clean up.
 # `_track_watcher` adds the task here on creation and removes it via
 # `add_done_callback` so the set doesn't grow unboundedly. Tests can
@@ -88,7 +88,7 @@ def _track_watcher(task: asyncio.Task) -> None:
     task.add_done_callback(_active_watchers.discard)
 
 
-# Concurrency cap on simultaneously-spawned subprocesses. Default 2 —
+# Concurrency cap on simultaneously-spawned subprocesses. Default 2 -
 # each subprocess drives a Playwright Chromium that's ~500MB resident,
 # so without a cap an operator clicking "Run report" across 10 dates
 # can OOM the host. (Round-3 milestone-review HIGH #3.)
@@ -106,7 +106,7 @@ def _get_spawn_semaphore() -> asyncio.Semaphore:
     """Lazy-init the semaphore so it binds to the running event loop.
 
     `asyncio.Semaphore()` constructed at module import binds to whatever
-    loop is current then — which under uvicorn isn't the same loop as
+    loop is current then - which under uvicorn isn't the same loop as
     the one serving requests. Lazy init defers the bind to first use.
     Tests reset via `_reset_spawn_semaphore_for_tests`.
     """
@@ -135,7 +135,7 @@ def pid_start_time(pid: int) -> str | None:
     Returns the integer as a string for direct round-trip storage in the
     `pid_start_time` TEXT column. Returns None when the PID doesn't exist
     or /proc/<pid>/stat can't be parsed (corrupt format from a kernel
-    we don't recognize). Linux-only — the dashboard refuses to start on
+    we don't recognize). Linux-only - the dashboard refuses to start on
     other platforms (see `dashboard/api/main.py:_startup_sync`).
 
     Field 22 is the right field after handling the parenthesized comm field
@@ -166,7 +166,7 @@ def _pgid_alive_and_ours(pgid: int, recorded_start_time: str | None) -> bool:
       - `os.killpg(pgid, 0)` raises ProcessLookupError if the PGID is gone.
       - We compare `pid_start_time(pgid)` against the value recorded at
         spawn. If they differ, the OS has recycled the PID for an
-        unrelated process — return False so we DON'T SIGTERM it.
+        unrelated process - return False so we DON'T SIGTERM it.
       - If `recorded_start_time` is None (rare: /proc parse failure at
         spawn time), we **refuse to claim ownership** rather than fall
         back to "trust the PGID". The cost is a leaked subprocess on
@@ -179,11 +179,11 @@ def _pgid_alive_and_ours(pgid: int, recorded_start_time: str | None) -> bool:
     except ProcessLookupError:
         return False
     except PermissionError:
-        # Process exists but isn't ours — never our process. Don't kill.
+        # Process exists but isn't ours - never our process. Don't kill.
         return False
 
     if recorded_start_time is None:
-        # /proc parse failed at spawn time — we don't have enough info to
+        # /proc parse failed at spawn time - we don't have enough info to
         # verify identity. Refuse to claim ownership rather than risk
         # killing the wrong process group.
         return False
@@ -214,7 +214,7 @@ def _kill_pgid(pgid: int, *, grace_seconds: float = 5.0) -> None:
             os.killpg(pgid, 0)
         except ProcessLookupError:
             return
-        # Sync sleep — recovery already runs in a worker thread via
+        # Sync sleep - recovery already runs in a worker thread via
         # `asyncio.to_thread`, so blocking the thread is fine.
         time.sleep(step)
         deadline -= step
@@ -331,8 +331,8 @@ async def spawn_run(
 
     # Concurrency cap: hold the semaphore across the spawn-and-track
     # window. Released in the watcher's finally block so a long crawl
-    # doesn't hold the slot indefinitely. The acquire CAN block — by
-    # design — so an operator queuing 10 runs at once sees them spawn
+    # doesn't hold the slot indefinitely. The acquire CAN block - by
+    # design - so an operator queuing 10 runs at once sees them spawn
     # in batches of `AFR_DASHBOARD_MAX_CONCURRENT_RUNS` instead of
     # OOMing the host.
     sem = _get_spawn_semaphore()
@@ -357,7 +357,7 @@ async def spawn_run(
         raise
 
     # Race-safe PID/PGID capture. A `/bin/false`-style subprocess can exit
-    # between create_subprocess_exec and getpgid — that raises
+    # between create_subprocess_exec and getpgid - that raises
     # ProcessLookupError on some kernels. Fall back to process.pid (which
     # asyncio cached at spawn time) so the UPDATE still has SOMETHING in
     # the pgid column, and recovery's identity check fails fast.
@@ -379,7 +379,7 @@ async def spawn_run(
         )
     if not promoted:
         # Race: _watch already saw the process exit and marked the row
-        # terminal before we got here. Don't roll back — _watch's update
+        # terminal before we got here. Don't roll back - _watch's update
         # is the truthful one. Just log so this rare path is visible.
         logger.warning(
             f"runner: db_id={db_id} pending → running UPDATE found row "
@@ -441,7 +441,7 @@ async def _watch(
         exit_code = await process.wait()
     except asyncio.CancelledError:
         cancelled = True
-        # Don't re-raise yet — let finally write the row first, then
+        # Don't re-raise yet - let finally write the row first, then
         # propagate. (asyncio.CancelledError is the one BaseException-
         # derived class we MUST re-raise so the task is correctly marked
         # cancelled in the asyncio bookkeeping.)
@@ -454,7 +454,7 @@ async def _watch(
         # Drop PGID from the eager-shutdown set + release the semaphore
         # slot. Both safe to call unconditionally (discard is idempotent;
         # release() balances the spawn-side acquire). The watcher OWNS
-        # both — exit MUST clean them up so the next spawn slot frees
+        # both - exit MUST clean them up so the next spawn slot frees
         # up and the next graceful-shutdown doesn't try to SIGTERM a
         # gone PGID. Wrapped in try/except so a failure here can't
         # prevent the DB write below.
@@ -464,7 +464,7 @@ async def _watch(
             try:
                 semaphore.release()
             except ValueError:
-                # Over-release — would happen if some test or future
+                # Over-release - would happen if some test or future
                 # refactor double-calls _watch on the same task. Log
                 # rather than crash the watcher.
                 logger.warning(f"runner: db_id={db_id} semaphore over-release ignored")
@@ -490,7 +490,7 @@ async def _watch(
                     error=error,
                 )
             if not updated:
-                # Already terminal — restart-recovery beat us (e.g.
+                # Already terminal - restart-recovery beat us (e.g.
                 # dashboard restarted between subprocess exit and watcher
                 # rescheduling). The recovery's status is the truthful one.
                 logger.info(
@@ -528,7 +528,7 @@ def recover_orphaned_runs(
 
     `killer` is parameterized so tests can swap in a fake that records
     calls without actually shooting at PIDs. The default sends real
-    signals — only ever invoked at startup, so the blast radius is the
+    signals - only ever invoked at startup, so the blast radius is the
     one previous run's tree.
 
     Killer failures are caught per-row so one rogue PGID can't abort
@@ -537,7 +537,7 @@ def recover_orphaned_runs(
     DB-level state is consistent for the operator).
 
     All UPDATEs run inside one BEGIN IMMEDIATE / COMMIT so recovery is
-    atomic — either all rows transition or none do, even if the dashboard
+    atomic - either all rows transition or none do, even if the dashboard
     crashes mid-loop.
 
     Intentionally synchronous so the lifespan can run it inside the same
@@ -552,7 +552,7 @@ def recover_orphaned_runs(
         # `BEGIN IMMEDIATE` takes the write lock up front so concurrent
         # writers (e.g. a route handler) can't interleave with recovery.
         # autocommit mode (isolation_level=None) means we have to issue
-        # this explicitly — see db.py for the rationale.
+        # this explicitly - see db.py for the rationale.
         conn.execute("BEGIN IMMEDIATE")
         try:
             for row in active:
@@ -575,7 +575,7 @@ def recover_orphaned_runs(
                         try:
                             killer(pgid_int)
                         except Exception as e:
-                            # Per-row defense — one rogue process can't
+                            # Per-row defense - one rogue process can't
                             # abort recovery for the rest. Log so the
                             # operator can investigate the leaked PGID.
                             logger.error(
@@ -611,7 +611,7 @@ def shutdown_active_subprocesses(*, grace_seconds: float = 5.0) -> int:
     Called from the lifespan's shutdown side. Without this, uvicorn's
     SIGTERM cancels the watcher tasks (which propagate CancelledError
     cleanly and mark the row interrupted), but the OS subprocesses
-    survive — they're in a separate process group thanks to
+    survive - they're in a separate process group thanks to
     `start_new_session=True`. The next dashboard startup's recovery
     pass would then SIGTERM them after a 5s grace, leaking N Playwright
     processes for that window.
@@ -631,7 +631,7 @@ def shutdown_active_subprocesses(*, grace_seconds: float = 5.0) -> int:
         except Exception as e:
             logger.warning(
                 f"runner: shutdown SIGTERM(pgid={pgid}) raised "
-                f"{type(e).__name__}: {e} — continuing with the rest"
+                f"{type(e).__name__}: {e} - continuing with the rest"
             )
         _active_pgids.discard(pgid)
     return len(pgids)

@@ -36,7 +36,7 @@ class ComparatorEngine:
     def __init__(self):
         pass
 
-    # Run-dir discovery — was date-only pre-B.1. Now drills through
+    # Run-dir discovery - was date-only pre-B.1. Now drills through
     # date → latest complete run, falling back to the date dir itself for
     # legacy layouts (see finder.find_latest_run_dir for details).
     @classmethod
@@ -64,7 +64,7 @@ class ComparatorEngine:
 
         `sites` is the list of `{id, url, name}` dicts from sites.yml. Per-
         site directory names are resolved via `_site_dir_name` (Phase B.3
-        — prefers `site["id"]`, falls back to `url_to_dirname(url)` for
+        - prefers `site["id"]`, falls back to `url_to_dirname(url)` for
         legacy/test callers passing dicts without an id).
         """
         date_str = settings.get_current_date()
@@ -79,7 +79,7 @@ class ComparatorEngine:
         date_dir.mkdir(parents=True, exist_ok=True)
 
         # Derive source_run_ids when the input dirs are run-id dirs. If they're
-        # legacy date dirs (B.1 grace mode), leave empty — the manifest will
+        # legacy date dirs (B.1 grace mode), leave empty - the manifest will
         # show the gap rather than lie about the source.
         source_run_ids: dict[str, str] = {}
         if is_valid_run_id(baseline_dir.name):

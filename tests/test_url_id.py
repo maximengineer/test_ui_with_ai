@@ -1,12 +1,12 @@
 """url_id edge-case tests (Phase A.4).
 
-Pins the behavior of `test_ui/common/url_id.url_to_dirname` — the canonical
+Pins the behavior of `test_ui/common/url_id.url_to_dirname` - the canonical
 URL→directory function that A.3 collapsed from four duplicates. The function
 is intentionally NOT a full URL canonicalizer; it preserves pre-A.3 behavior
 exactly so the A.2 goldens stay valid. These tests pin that behavior so any
 future change is loud.
 
-Several cases are documented as **latent bugs** — surprising or
+Several cases are documented as **latent bugs** - surprising or
 filesystem-hostile output that the pre-A.3 code already produced. Tests pin
 the current value so we don't accidentally "fix" them and break goldens
 without realizing. They're tracked as flags in REFACTOR_AND_DASHBOARD_PLAN.md
@@ -28,7 +28,7 @@ from test_ui.common.url_id import sanitize_filename, url_to_dirname
 @pytest.mark.parametrize(
     "url,expected",
     [
-        # The three examples from the docstring — these are the contract.
+        # The three examples from the docstring - these are the contract.
         ("https://gov.ie/", "gov.ie"),
         ("https://www.gov.ie/about/", "gov.ie_about"),
         ("https://www.gov.ie/en/news/2025/", "gov.ie_en_news_2025"),
@@ -45,7 +45,7 @@ def test_docstring_examples(url, expected):
 
 
 def test_trailing_slash_does_not_change_result():
-    """`/about/` and `/about` map to the same dirname — strip("/") collapses both."""
+    """`/about/` and `/about` map to the same dirname - strip("/") collapses both."""
     assert url_to_dirname("https://gov.ie/about/") == url_to_dirname(
         "https://gov.ie/about"
     )
@@ -84,7 +84,7 @@ def test_www_stripping_is_too_aggressive_latent_bug():
 
 
 # ---------------------------------------------------------------------------
-# Query strings + fragments — both dropped (urlparse separates them out)
+# Query strings + fragments - both dropped (urlparse separates them out)
 # ---------------------------------------------------------------------------
 
 
@@ -113,7 +113,7 @@ def test_query_and_fragment_collide_on_dirname():
 
 
 # ---------------------------------------------------------------------------
-# Ports — preserved verbatim (incl. the colon)
+# Ports - preserved verbatim (incl. the colon)
 # ---------------------------------------------------------------------------
 
 
@@ -161,7 +161,7 @@ def test_case_is_preserved():
     `https://EXAMPLE.com/` and `https://example.com/` produce DIFFERENT
     dirnames. On case-insensitive filesystems (macOS HFS+, NTFS) this would
     collide; on case-sensitive (Linux ext4) it's two separate URLs from the
-    pipeline's perspective — which is wrong because they're the same site.
+    pipeline's perspective - which is wrong because they're the same site.
 
     Pinned for now; future canonicalizer should `.lower()` the netloc.
     """
@@ -189,7 +189,7 @@ def test_unicode_path_is_preserved_verbatim():
 
 
 def test_percent_encoded_path_is_preserved_verbatim():
-    """Percent-encoded paths are NOT decoded — `caf%C3%A9` stays as-is.
+    """Percent-encoded paths are NOT decoded - `caf%C3%A9` stays as-is.
 
     This means `caf%C3%A9` and `café` produce DIFFERENT dirnames even though
     they refer to the same URL. Pinning the current behavior; a future
@@ -199,7 +199,7 @@ def test_percent_encoded_path_is_preserved_verbatim():
 
 
 # ---------------------------------------------------------------------------
-# Degenerate inputs — pin the (broken) outputs so they don't silently change
+# Degenerate inputs - pin the (broken) outputs so they don't silently change
 # ---------------------------------------------------------------------------
 
 

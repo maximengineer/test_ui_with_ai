@@ -14,7 +14,7 @@
 // Exits 0 on success of the script (whether or not the fixture is valid).
 // Exits 1 on script-level error (fixture missing, schema missing, bad args).
 //
-// Stdout: a single character — "V" if the fixture validates, "I" if not.
+// Stdout: a single character - "V" if the fixture validates, "I" if not.
 // Stderr: detailed ajv errors when invalid (handy for debugging fixtures).
 
 const fs = require('fs');
@@ -78,7 +78,7 @@ function main() {
       }
     }
   }
-  // Don't call process.exit() — it can truncate buffered stdout writes per
+  // Don't call process.exit() - it can truncate buffered stdout writes per
   // Node's documented behavior. Let the process exit naturally (clean flush
   // first). exitCode defaults to 0 if everything ran to completion.
 }

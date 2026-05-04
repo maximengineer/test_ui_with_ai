@@ -1,6 +1,6 @@
 {
   "additionalProperties": false,
-  "description": "Comparator detected no changes for this URL. AI was not invoked.\n\nDistinct from AIAnalysisResponse(severity=SAFE) \u2014 that would imply the AI\nlooked at the page and decided it was safe. This says the AI never looked\nbecause there was nothing to look at.",
+  "description": "Comparator detected no changes for this URL. AI was not invoked.\n\nDistinct from AIAnalysisResponse(severity=SAFE) - that would imply the AI\nlooked at the page and decided it was safe. This says the AI never looked\nbecause there was nothing to look at.",
   "properties": {
     "checked_at": {
       "title": "Checked At",

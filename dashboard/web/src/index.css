@@ -4,7 +4,7 @@
 @import "tailwindcss";
 
 /* Reasonable defaults applied to the document root. The Vite template
-   shipped a `:root` block with hard-coded light/dark colors — we want
+   shipped a `:root` block with hard-coded light/dark colors - we want
    Tailwind to own colors entirely, so it's gone. */
 html, body, #root {
   height: 100%;

@@ -4,7 +4,7 @@ Pin the migration mechanism (idempotent, atomic, version-aware), the per-
 connection PRAGMAs (WAL + busy_timeout actually applied), and the row-
 helper contracts (UNIQUE-conflict swallow, paginated list ordering).
 
-The migrations list is append-only — these tests catch reordering or
+The migrations list is append-only - these tests catch reordering or
 deletion early by depending on the *count* and the schema produced by
 v1 specifically.
 """
@@ -28,7 +28,7 @@ def test_run_kinds_match_manifest_kind_literal():
     """The dashboard's RUN_KINDS_TUPLE must mirror manifest.Kind exactly.
 
     If someone adds a new kind to manifest.py without updating db.py the
-    `runs.kind` CHECK constraint will reject inserts at sync time — failure
+    `runs.kind` CHECK constraint will reject inserts at sync time - failure
     mode is a confusing INSERT error in production. Pinning here turns it
     into an obvious test failure.
     """
@@ -102,7 +102,7 @@ def test_pragmas_applied_per_connection(tmp_path):
     """journal_mode=WAL and busy_timeout=5000 must actually take effect.
 
     Catches a regression where someone calls `connect` but forgets a
-    PRAGMA — the symptom (concurrent writes failing under load) only
+    PRAGMA - the symptom (concurrent writes failing under load) only
     appears in production.
     """
     db_path = tmp_path / "pragma.db"
@@ -118,7 +118,7 @@ def test_pragmas_applied_per_connection(tmp_path):
 
 def test_apply_migrations_refuses_db_from_future(tmp_path):
     """If the DB's user_version exceeds len(MIGRATIONS) we must NOT silently
-    treat it as up-to-date — that masks a downgrade footgun where the user
+    treat it as up-to-date - that masks a downgrade footgun where the user
     booted a newer dashboard, then ran an older binary that doesn't know
     about a newly-added column."""
     db_path = tmp_path / "future.db"
@@ -131,7 +131,7 @@ def test_apply_migrations_refuses_db_from_future(tmp_path):
 def test_insert_discovered_run_dedupes_on_run_id(tmp_path):
     """Second insert of the same run_id returns None (not an exception).
 
-    This is the success path for `sync_runs` re-runs — it relies on the
+    This is the success path for `sync_runs` re-runs - it relies on the
     UNIQUE conflict being swallowed so it can blindly attempt every
     on-disk manifest without pre-checking the DB.
     """
@@ -164,7 +164,7 @@ def test_insert_discovered_run_dedupes_on_run_id(tmp_path):
 
 def test_insert_rejects_unknown_kind_via_check_constraint(tmp_path):
     """Defensive: the CHECK constraint must reject a typo that slipped past
-    the Pydantic Literal — e.g. 'comparison' instead of 'comparator'."""
+    the Pydantic Literal - e.g. 'comparison' instead of 'comparator'."""
     db_path = tmp_path / "check.db"
     dbmod.init_db(db_path)
     with dbmod.connection_scope(db_path) as conn:
@@ -172,7 +172,7 @@ def test_insert_rejects_unknown_kind_via_check_constraint(tmp_path):
             dbmod.insert_discovered_run(
                 conn,
                 run_id="01HYY0000000000000000000A0",
-                kind="comparison",  # wrong vocab — must reject
+                kind="comparison",  # wrong vocab - must reject
                 status="done",
                 created_at="01-01-2099",
                 started_at=None,
@@ -186,7 +186,7 @@ def test_insert_rejects_unknown_source_via_check_constraint(tmp_path):
     that passes a value outside ('dashboard','discovered','cli') must fail.
 
     Indirect coverage only existed via `insert_discovered_run` which hard-
-    codes 'discovered' — that wouldn't catch a typo in a future helper for
+    codes 'discovered' - that wouldn't catch a typo in a future helper for
     a different source. Pin the constraint itself.
     """
     db_path = tmp_path / "src.db"
@@ -227,13 +227,13 @@ def test_quote_compile_time_literals_rejects_unsafe_value():
 def test_list_runs_filters_and_paginates(tmp_path):
     """Verify ORDER BY created_at DESC + kind/status filters + LIMIT/OFFSET.
 
-    The DB layer doesn't validate `run_id` against the ULID format — that's
+    The DB layer doesn't validate `run_id` against the ULID format - that's
     the manifest layer's job. So we use synthetic uniqueness-only IDs here.
     """
     db_path = tmp_path / "list.db"
     dbmod.init_db(db_path)
     with dbmod.connection_scope(db_path) as conn:
-        # 3 baselines done, 2 currents failed — distinct created_at so order
+        # 3 baselines done, 2 currents failed - distinct created_at so order
         # is deterministic.
         for i in range(3):
             dbmod.insert_discovered_run(

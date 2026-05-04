@@ -1,6 +1,6 @@
 """HTML/DOM diffing for the comparator (Phase A.3 split).
 
-Pure functions extracted from comparator/engine.py — no class state.
+Pure functions extracted from comparator/engine.py - no class state.
 Behavior preserved verbatim so the A.2 comparator goldens keep passing.
 
 Public API:
@@ -50,13 +50,13 @@ TAG_TYPES = (
 def assess_element_impact(tag: str, count_diff: int) -> str:
     """Heuristic impact rating for an element-count change.
 
-    Tag-class + magnitude — no asymmetry between added/removed (the
+    Tag-class + magnitude - no asymmetry between added/removed (the
     previous `change_type` parameter was unused since this function
     was extracted; dropped per plan-implementation-flag cleanup).
 
     `count_diff` is always positive at the call sites (always
     `abs(current - baseline)`, only invoked when `current != baseline`),
-    so the HIGH_IMPACT branch is unconditional `"high"` — the previous
+    so the HIGH_IMPACT branch is unconditional `"high"` - the previous
     `else "medium"` arm was dead code (would only fire for count_diff=0,
     which never reaches this function).
     """
@@ -167,7 +167,7 @@ def analyze_navigation_changes(baseline_soup, current_soup) -> list:
     baseline_set = set(baseline_nav_links)
     current_set = set(current_nav_links)
     # Set iteration order is non-deterministic. Preserved verbatim from
-    # pre-A.3 behavior — A.3 doesn't change behavior, only structure.
+    # pre-A.3 behavior - A.3 doesn't change behavior, only structure.
     # A future task can sort here if golden stability becomes a concern.
     for item in current_set - baseline_set:
         changes.append(
