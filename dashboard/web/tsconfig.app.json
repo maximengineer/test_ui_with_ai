@@ -29,10 +29,12 @@
     "erasableSyntaxOnly": true,
     "noFallthroughCasesInSwitch": true,
 
-    /* Path alias — mirrors vite.config.ts so the IDE + tsc agree. */
-    "baseUrl": ".",
+    /* Path alias — mirrors vite.config.ts so the IDE + tsc agree.
+     * No `baseUrl` needed: TS 5.0 deprecated it, and with
+     * `moduleResolution: "bundler"` the `paths` values resolve
+     * relative to this tsconfig file's location automatically. */
     "paths": {
-      "@/*": ["src/*"]
+      "@/*": ["./src/*"]
     }
   },
   "include": ["src"]
