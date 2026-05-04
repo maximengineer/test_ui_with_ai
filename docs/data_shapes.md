@@ -40,7 +40,7 @@ Always written, regardless of outcome. The wrapper around per-URL state.
 }
 ```
 
-### `result` field — three shapes
+### `result` field - three shapes
 
 **Error case** (site missing from baseline or current):
 
@@ -90,9 +90,9 @@ Always written, regardless of outcome. The wrapper around per-URL state.
 }
 ```
 
-Consumed by [`report/generator.py:42-54`](../test_ui/report/generator.py#L42-L54) — note the multi-signal change detection there, which OR-s `changes_detected` against several other fields. Phase A.3 should investigate why the top-level `changes_detected` flag isn't trusted on its own.
+Consumed by [`report/generator.py:42-54`](../test_ui/report/generator.py#L42-L54) - note the multi-signal change detection there, which OR-s `changes_detected` against several other fields. Phase A.3 should investigate why the top-level `changes_detected` flag isn't trusted on its own.
 
-> **⚠ Known comparator bug:** [`_create_change_summary_json`](../test_ui/comparator/engine.py#L1176-L1178) reads `dom_result.get("title_changed", False)`, `.get("content_changed", False)`, `.get("structure_changed", False)` — but `_compare_dom` doesn't emit those flat keys; it emits nested objects (`title.changed`, `content.significant_change`, etc.). So the `change_categories.content` block in every real `change_summary.json` always shows all-`False`. Out of scope for A.1; flagged for the comparator-side cleanup in A.3.
+> **⚠ Known comparator bug:** [`_create_change_summary_json`](../test_ui/comparator/engine.py#L1176-L1178) reads `dom_result.get("title_changed", False)`, `.get("content_changed", False)`, `.get("structure_changed", False)` - but `_compare_dom` doesn't emit those flat keys; it emits nested objects (`title.changed`, `content.significant_change`, etc.). So the `change_categories.content` block in every real `change_summary.json` always shows all-`False`. Out of scope for A.1; flagged for the comparator-side cleanup in A.3.
 
 ---
 
@@ -136,14 +136,14 @@ Severity assignment, from [`engine.py:1102-1128`](../test_ui/comparator/engine.p
 - Visual: SSIM `< 0.8` → high; `< 0.95` → medium; else low.
 - CSS changes → medium contribution.
 - JS changes → high contribution.
-- HTML changes → low contribution (unless structural — but the structural distinction isn't captured at this level).
+- HTML changes → low contribution (unless structural - but the structural distinction isn't captured at this level).
 - Overall = max of contributions, with `none` if no category fired.
 
 ---
 
 ## `html_changes.json`
 
-Per-change records describing the DOM diff. **This is the file with per-change records and code snippets** — the most important file for AI prompt construction.
+Per-change records describing the DOM diff. **This is the file with per-change records and code snippets** - the most important file for AI prompt construction.
 
 ```json
 {
@@ -288,10 +288,10 @@ Since `html_changes.json` is the only file with per-change records and code snip
 - Pixel-level coordinates of visual differences (only an SSIM score and a diff image).
 - Cross-file dependency analysis ("this CSS change broke this HTML element").
 
-If the AI's analysis quality requires any of these, the comparator itself needs work — and that's outside Milestone A's non-goals. Document the gap, plan future work.
+If the AI's analysis quality requires any of these, the comparator itself needs work - and that's outside Milestone A's non-goals. Document the gap, plan future work.
 
 ---
 
 ## Realistic payload sizes
 
-**Cannot measure today** — no live data exists. Phase A.1.4's bounded defaults (30 MB body, 200 changes per category, 2000-char snippets) are sized for safety, not measurement. After the first real run produces output, this section should be updated with observed sizes for a representative spread of pages (small/medium/large).
+**Cannot measure today** - no live data exists. Phase A.1.4's bounded defaults (30 MB body, 200 changes per category, 2000-char snippets) are sized for safety, not measurement. After the first real run produces output, this section should be updated with observed sizes for a representative spread of pages (small/medium/large).

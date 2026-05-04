@@ -12,8 +12,8 @@ When real comparator data exists, replace these with sanitized samples from real
 
 ## Files
 
-- `comparison_results.json` — wrapper file, success case with detected changes.
-- `change_summary.json` — master AI-facing summary.
-- `html_changes.json` — DOM diff with several change types.
-- `css_changes.json` — file-level CSS diff.
-- `js_changes.json` — file-level JS diff (no detected changes — exercises the empty path).
+- `comparison_results.json` - wrapper file, success case with detected changes.
+- `change_summary.json` - master AI-facing summary.
+- `html_changes.json` - DOM diff with several change types.
+- `css_changes.json` - file-level CSS diff.
+- `js_changes.json` - file-level JS diff (no detected changes - exercises the empty path).

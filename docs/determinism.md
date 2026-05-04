@@ -1,6 +1,6 @@
 # Crawler determinism baseline
 
-UI regression analysis is only as useful as its inputs are deterministic. Every source of noise in the crawl becomes a false positive that the AI layer then has to explain away. This doc records what determinism controls we use today, what we *don't* control, and which gaps are most likely to produce noisy diffs. Comprehensive determinism work is out of scope for the current refactor — see `REFACTOR_AND_DASHBOARD_PLAN.md` non-goals — but knowing the gaps is the prerequisite for fixing them later.
+UI regression analysis is only as useful as its inputs are deterministic. Every source of noise in the crawl becomes a false positive that the AI layer then has to explain away. This doc records what determinism controls we use today, what we *don't* control, and which gaps are most likely to produce noisy diffs. Comprehensive determinism work is out of scope for the current refactor - see `REFACTOR_AND_DASHBOARD_PLAN.md` non-goals - but knowing the gaps is the prerequisite for fixing them later.
 
 ## What we control today
 
@@ -16,7 +16,7 @@ Source: [`test_ui/crawler/engine.py`](../test_ui/crawler/engine.py) and [`test_u
 | Parallel workers | 3 | `Settings.crawler_workers` |
 | Asset downloading | hash-stripped, deterministic naming | crawler rewrites HTML to use deterministic local filenames so hash-based CDN URLs don't produce false diffs |
 
-The hash-stripping is genuinely valuable — without it, every cache-busted CSS link looks like a "change."
+The hash-stripping is genuinely valuable - without it, every cache-busted CSS link looks like a "change."
 
 ## What we don't control (sources of noise)
 
@@ -27,11 +27,11 @@ These are the most likely producers of false-positive diffs. Listed roughly by h
 3. **Timezone / locale.** Server-rendered timestamps, currency, date formats can vary by container locale. We don't pin either.
 4. **Cookie / session state.** Each crawl starts cold. Logged-in vs logged-out states aren't supported.
 5. **A/B tests and feature flags.** Random bucket assignment per crawl produces structural diffs we can't attribute to a "change."
-6. **Third-party scripts.** Analytics, fonts, embedded widgets — all change asynchronously and outside our control.
+6. **Third-party scripts.** Analytics, fonts, embedded widgets - all change asynchronously and outside our control.
 7. **Font loading races.** FOIT/FOUT can change the *first* screenshot vs subsequent ones; no font preload waits.
 8. **Network conditions.** Slow CDN responses can leave images unloaded at screenshot time. No explicit "wait for network idle" beyond Crawl4AI defaults.
 9. **Browser version pinning.** Crawl4AI's bundled Chromium version is whatever the installed `crawl4ai` package gives us. No explicit pin.
-10. **Per-page ignore regions / masks.** No way to say "ignore this DOM subtree in diffs" — useful for known-dynamic regions like timestamps and ad slots.
+10. **Per-page ignore regions / masks.** No way to say "ignore this DOM subtree in diffs" - useful for known-dynamic regions like timestamps and ad slots.
 
 ## Why this matters for the AI
 

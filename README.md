@@ -66,7 +66,7 @@ python -m venv .venv
 source .venv/bin/activate
 pip install poetry && poetry install
 
-# AI analyzer still runs in Docker — it's a small Node service:
+# AI analyzer still runs in Docker - it's a small Node service:
 docker compose up -d ai-analyzer
 
 cp .env.example .env
@@ -88,7 +88,7 @@ All runtime settings are read from environment variables prefixed `AFR_` (or fro
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `GEMINI_API_KEY` | — | Google Gemini API key. Required if AI is enabled. |
+| `GEMINI_API_KEY` | - | Google Gemini API key. Required if AI is enabled. |
 | `GEMINI_MODEL` | `gemini-2.5-pro` | Model to use. |
 | `AFR_AI_ANALYZER_SERVICE_URL` | `http://ai-analyzer:3000` | URL of the Node AI service. Set to `http://localhost:3000` for local dev. |
 | `AFR_AI_ENABLED` | `true` | Set `false` to skip AI calls entirely. |
@@ -192,4 +192,4 @@ The work-in-progress refactor plan is in [`REFACTOR_AND_DASHBOARD_PLAN.md`](REFA
 
 ## License
 
-MIT — see [LICENSE](LICENSE) (if present).
+MIT - see [LICENSE](LICENSE) (if present).

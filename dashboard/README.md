@@ -32,19 +32,19 @@ dashboard/
 
 ## Running the dashboard
 
-### Local dev (Linux only — fast edit loop)
+### Local dev (Linux only - fast edit loop)
 
 ```bash
 make dashboard-dev
 ```
 
 Parallels uvicorn (with `--reload`) and the Vite dev server via
-`concurrently`. Open http://localhost:5173 — Vite proxies `/api/*` to
+`concurrently`. Open http://localhost:5173 - Vite proxies `/api/*` to
 the backend on `:8080`.
 
 For backend-only iteration (no SPA), `make dashboard-dev-backend`.
 
-### Docker (cross-platform — Mac/Windows operators use this)
+### Docker (cross-platform - Mac/Windows operators use this)
 
 ```bash
 make dashboard-docker     # docker compose up -d dashboard
@@ -75,7 +75,7 @@ All env vars are namespaced `AFR_*`. Common ones:
 ## Architecture notes
 
 **Subprocess isolation.** The dashboard never imports the crawler /
-comparator / report generators directly — it spawns
+comparator / report generators directly - it spawns
 `python -m test_ui <command> --run-id <ULID> ...` as a separate process
 group (`start_new_session=True`). Crash isolation: a Playwright segfault
 takes down the subprocess, the dashboard stays up. Cleanup safety: on
@@ -85,12 +85,12 @@ recycling).
 
 **Same-origin SPA.** In production the React bundle and the JSON API
 are served from the same FastAPI instance. No CORS, no separate static
-host. The Vite dev server (port `5173`) is dev-only — it proxies
+host. The Vite dev server (port `5173`) is dev-only - it proxies
 `/api/*` to the backend on `:8080`.
 
 **Run-id pre-allocation.** The dashboard generates a ULID before
 spawning, passes it via `--run-id`, and tracks the row by that ID. The
-CLI accepts the flag transparently (auto-generates one when absent —
+CLI accepts the flag transparently (auto-generates one when absent -
 the CLI use case).
 
 ## Tests
@@ -103,7 +103,7 @@ poetry run pytest tests/test_dashboard_*.py
 (sites CRUD + reports + health), SPA serving, and an end-to-end
 TestClient happy-path (`test_dashboard_api_workflow.py`).
 
-For the CI surface, see `.github/workflows/ci.yml` — `dashboard-openapi-drift`
+For the CI surface, see `.github/workflows/ci.yml` - `dashboard-openapi-drift`
 fails if the committed `schemas/dashboard-openapi.json` snapshot
 disagrees with `app.openapi()` from the live backend (which would mean
 the React TypeScript types are stale).
