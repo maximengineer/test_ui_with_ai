@@ -41,6 +41,13 @@ class Settings(BaseSettings):
 
     # Comparison thresholds
     visual_similarity_threshold: float = 0.95  # SSIM score
+    # Min area (px²) of any single connected diff region to count as a
+    # visual change. Catches small-but-distinct localized mutations
+    # (e.g. an 80x80 painted rect = 6400 px² has SSIM mean ~0.99 - too
+    # high to trip the SSIM threshold above - but produces one obvious
+    # contour). Default 50 px² ≈ a 7x7 mark; tweak via
+    # AFR_VISUAL_MIN_CONTOUR_AREA.
+    visual_min_contour_area: int = 50
     css_change_threshold: int = 5  # Number of CSS property changes
     js_size_change_threshold: float = 0.1  # 10% size change
 
@@ -74,10 +81,11 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_file=".env",
         env_prefix="AFR_",
-        # "ignore" so non-AFR_ env vars (e.g. GEMINI_API_KEY consumed by Node)
-        # don't make Settings construction fail. Trade-off: typos in AFR_* vars
-        # are silently ignored too. If that becomes painful, switch to "forbid"
-        # and add the non-AFR vars as fields here.
+        # "ignore" so non-AFR_ env vars (e.g. OPENROUTER_API_KEY consumed
+        # by the Node analyzer) don't make Settings construction fail.
+        # Trade-off: typos in AFR_* vars are silently ignored too. If that
+        # becomes painful, switch to "forbid" and add the non-AFR vars as
+        # fields here.
         extra="ignore",
     )
 
