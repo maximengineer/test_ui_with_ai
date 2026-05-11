@@ -21,6 +21,8 @@ from loguru import logger
 from PIL import Image
 from skimage.metrics import structural_similarity as ssim
 
+from ..config import settings
+
 
 def compare_screenshots(
     baseline_img_path: Path,
@@ -58,18 +60,43 @@ def compare_screenshots(
 
         score, diff = ssim(baseline_gray, current_gray, full=True)
 
-        if score < 1.0:
+        # Two complementary signals decide `visual_changes`:
+        #
+        # 1. SSIM mean threshold (`visual_similarity_threshold`, default
+        #    0.95) catches large-area changes and uniform luminance
+        #    shifts. Above-threshold = no overall change beyond
+        #    encoding noise.
+        #
+        # 2. Max-contour-area gate (`visual_min_contour_area`, default
+        #    50 px²) catches LOCALIZED changes that don't move the SSIM
+        #    mean enough to trip threshold #1. An 80x80 painted rect
+        #    on a 1080x600 image is SSIM ~0.99 (above 0.95) but
+        #    produces a single 6400 px² contour - clearly a real change
+        #    that #1 alone would miss (validated against the
+        #    `tamper_baseline.py` site-1 visual:drastic case).
+        #
+        # SSIM also stays in the response payload as a continuous
+        # signal for the AI severity rollup; the binary gate is just
+        # whether ANY of the two signals trips.
+        contours = _find_diff_contours(diff)
+        max_area = _max_contour_area(contours)
+        ssim_changed = score < settings.visual_similarity_threshold
+        contour_changed = max_area >= settings.visual_min_contour_area
+
+        if ssim_changed or contour_changed:
             diffs_dir.mkdir(exist_ok=True)
             diff_image_path = diffs_dir / "visual_diff.png"
-            _write_visual_diff(diff, current_resized, diff_image_path)
+            _write_visual_diff_from_contours(contours, current_resized, diff_image_path)
             return {
                 "ssim_score": float(score),
+                "max_contour_area": int(max_area),
                 "diff_image_path": str(diff_image_path.absolute()),
                 "dimensions_changed": dimensions_changed,
                 "visual_changes": True,
             }
         return {
             "ssim_score": float(score),
+            "max_contour_area": int(max_area),
             "dimensions_changed": dimensions_changed,
             "visual_changes": False,
         }
@@ -78,16 +105,13 @@ def compare_screenshots(
         return {"error": f"Screenshot comparison failed: {e!s}", "ssim_score": 0.0}
 
 
-def _write_visual_diff(
-    diff: np.ndarray, current_resized: np.ndarray, out_path: Path
-) -> None:
-    """Highlight regions that differ on a copy of the current screenshot.
+def _find_diff_contours(diff: np.ndarray) -> list:
+    """Otsu-threshold the SSIM diff image, return external contours.
 
-    Otsu-thresholds the SSIM diff to a binary mask, finds external contours,
-    draws red rectangles around each on the current frame. Output written to
-    `out_path`. Compression artifacts can produce noisy small contours - the
-    A.2 visual-diff golden test only checks size-bounds, not byte equality,
-    to absorb that.
+    Extracted from `_write_visual_diff` so the contour-area gate in
+    `compare_screenshots` can use the contour count/area as a binary
+    signal without re-running the contour pass when actually writing
+    the diff PNG.
     """
     diff_normalized = (diff * 255).astype("uint8")
     thresh = cv2.threshold(
@@ -99,8 +123,27 @@ def _write_visual_diff(
     contours = cv2.findContours(
         thresh.copy(), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
     )
-    contours = contours[0] if len(contours) == 2 else contours[1]
+    # OpenCV 3.x returned (img, contours, hierarchy); 4.x returns
+    # (contours, hierarchy). Tolerate either via length check, so a
+    # cv2 minor-version bump doesn't silently break detection.
+    return list(contours[0] if len(contours) == 2 else contours[1])
 
+
+def _max_contour_area(contours: list) -> int:
+    """Largest contour area in px². 0 when contours is empty."""
+    if not contours:
+        return 0
+    return max(int(cv2.contourArea(c)) for c in contours)
+
+
+def _write_visual_diff_from_contours(
+    contours: list, current_resized: np.ndarray, out_path: Path
+) -> None:
+    """Draw red bounding rectangles around `contours` on a copy of the
+    current screenshot and write to `out_path`. Compression artifacts
+    can produce noisy small contours - the A.2 visual-diff golden test
+    only checks size-bounds, not byte equality, to absorb that.
+    """
     diff_visual = current_resized.copy()
     for c in contours:
         x, y, w, h = cv2.boundingRect(c)
