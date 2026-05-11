@@ -77,11 +77,11 @@ class Site(BaseModel):
 def dedupe_slug(candidate: str, taken: set[str]) -> str:
     """Append `-2`, `-3`, ... until the slug is unique relative to `taken`.
 
-    The single source of truth for the suffix scheme. `load_sites` uses it
-    to auto-generate ids at runtime; `scripts/migrate_sites_ids.py` uses
-    the same function so the loader and the migration script produce
-    identical ids for the same input - without a shared helper they would
-    silently desync if either side changed the suffix style.
+    Used ONLY by the legacy-yaml loader path (`_coerce_to_site` for
+    entries that lack an explicit `id`). New `add_site` calls use
+    `next_numeric_id` instead - operator-facing IDs are numeric per the
+    user's preference. Kept here for backward compatibility with any
+    pre-numeric sites.yml that an operator hasn't yet migrated.
     """
     if candidate not in taken:
         return candidate
@@ -89,6 +89,25 @@ def dedupe_slug(candidate: str, taken: set[str]) -> str:
     while f"{candidate}-{n}" in taken:
         n += 1
     return f"{candidate}-{n}"
+
+
+def next_numeric_id(taken: set[str]) -> str:
+    """Return the smallest unused positive integer (as a string).
+
+    Iterates 1, 2, 3, ... and returns the first not in `taken`. Stable
+    even when the existing set is sparse (e.g. {"1", "3"} -> "2"), so
+    deletes don't leave permanent gaps in the sequence.
+
+    Why string-typed: the on-disk YAML stores IDs as strings (the model
+    field is `str`), and our pattern `^[a-z0-9][a-z0-9_-]*$` accepts
+    purely-numeric strings, so this is a drop-in replacement for
+    `dedupe_slug` in the auto-generation path. Returning an int would
+    just force every caller to `str(...)` it.
+    """
+    n = 1
+    while str(n) in taken:
+        n += 1
+    return str(n)
 
 
 def _coerce_to_site(raw: dict, *, taken_ids: set[str]) -> Site:
@@ -294,8 +313,8 @@ def _verify_or_rollback(path: Path, original_bytes: bytes | None) -> None:
 
 
 def add_site(path: Path, *, name: str, url: str) -> Site:
-    """Append a new site. The id is auto-derived from `slugify(name)` with
-    a numeric `-N` suffix on collision - see `dedupe_slug`. There is no
+    """Append a new site. The id is auto-assigned as the smallest unused
+    positive integer (1, 2, 3, ...) via `next_numeric_id`. There is no
     "id already exists" failure mode by design (see the SiteNotFound
     block comment above for the rationale).
 
@@ -311,8 +330,7 @@ def add_site(path: Path, *, name: str, url: str) -> Site:
         s.get("id") for s in data["sites"] if isinstance(s, dict) and s.get("id")
     }
 
-    base = slugify(name) if name else slugify(url_to_dirname(url))
-    new_id = dedupe_slug(base, existing_ids)
+    new_id = next_numeric_id(existing_ids)
 
     # Validate the new entry via Pydantic BEFORE the file is touched.
     site = Site(id=new_id, name=name, url=url)
@@ -325,6 +343,56 @@ def add_site(path: Path, *, name: str, url: str) -> Site:
     _atomic_write_yaml(path, data)
     _verify_or_rollback(path, original_bytes)
     return site
+
+
+def bulk_add_sites(path: Path, urls: list[str]) -> list[Site]:
+    """Append a batch of sites at once. id + name auto-generated.
+
+    Each URL becomes one site:
+      - `id` is the next sequential integer (1, 2, 3, ...) per the
+        `next_numeric_id` strategy, dedup'd across the existing file
+        AND across the in-flight batch (so a 5-URL batch added to a
+        2-site file produces ids 3, 4, 5, 6, 7).
+      - `name` defaults to the URL itself - operator can rename later
+        via PATCH if they want a friendlier label.
+      - `url` validated via the `Site` Pydantic model; any single URL
+        failing validation aborts the WHOLE batch (atomic write means
+        nothing lands).
+
+    All-or-nothing semantics by design: half a batch succeeding and
+    half failing produces a confusing partial state. Operator gets one
+    clear error pointing at the bad URL and re-submits a corrected list.
+
+    Empty `urls` is a no-op (returns []) - lets the route handler
+    accept an empty list without special-casing.
+    """
+    if not urls:
+        return []
+
+    data = _load_for_mutation(path)
+    existing_ids: set[str] = {
+        s.get("id") for s in data["sites"] if isinstance(s, dict) and s.get("id")
+    }
+
+    # Validate ALL entries first (and assign ids) so we never write a
+    # partially-valid batch. `taken` grows as we walk the batch so each
+    # URL gets a distinct id.
+    taken = set(existing_ids)
+    new_sites: list[Site] = []
+    new_entries: list[dict] = []
+    for url in urls:
+        new_id = next_numeric_id(taken)
+        # Validate via Pydantic - throws ValidationError on empty url etc.
+        site = Site(id=new_id, name=url, url=url)
+        new_sites.append(site)
+        new_entries.append({"id": new_id, "name": url, "url": url})
+        taken.add(new_id)
+
+    original_bytes = path.read_bytes() if path.exists() else None
+    data["sites"].extend(new_entries)
+    _atomic_write_yaml(path, data)
+    _verify_or_rollback(path, original_bytes)
+    return new_sites
 
 
 def update_site(
@@ -394,6 +462,59 @@ def delete_site(path: Path, site_id: str) -> None:
     raise SiteNotFound(f"no site with id={site_id!r}")
 
 
+def bulk_delete_sites(path: Path, ids: list[str]) -> tuple[list[str], list[str]]:
+    """Remove a batch of sites in a SINGLE atomic read+write.
+
+    Returns ``(deleted, skipped_not_found)`` - lists of ids that were
+    actually removed and ids that weren't present in the file. The
+    operator's request is best-effort per-id (mirrors the runs/bulk-delete
+    semantics) so a list with stale ids doesn't fail the whole call.
+
+    Why the dedicated helper (vs. looping `delete_site`):
+      - Atomic: one read, one write, one rollback check. Looping
+        single-deletes would do N read/write/rollback cycles, multiplying
+        I/O and widening the window where a partial-failure could leave
+        sites.yml in a half-deleted state if the process died mid-loop.
+      - Comment preservation: every `_atomic_write_yaml` round-trip is a
+        re-emission of the YAML; doing it once preserves operator-authored
+        layout exactly once instead of N times.
+
+    Empty `ids` is a no-op (returns ``([], [])``) - lets the route handler
+    accept an empty list without special-casing. (The route still rejects
+    empty bodies via Pydantic `min_length=1` for the same operator-error
+    feedback the runs/bulk-delete endpoint provides.)
+    """
+    if not ids:
+        return [], []
+
+    data = _load_for_mutation(path)
+    sites = data["sites"]
+    requested = set(ids)
+    # Walk in REVERSE so index-based deletion stays valid as we shrink the
+    # list. (Forward iteration would skip the entry after each deletion.)
+    deleted: list[str] = []
+    for i in range(len(sites) - 1, -1, -1):
+        entry = sites[i]
+        if isinstance(entry, dict) and entry.get("id") in requested:
+            deleted.append(entry["id"])
+            del sites[i]
+
+    skipped_not_found = sorted(requested - set(deleted))
+
+    if not deleted:
+        # Nothing actually changed - skip the write to preserve mtime
+        # (file watchers / reloaders are happier this way) and avoid an
+        # unnecessary atomic-rename.
+        return [], skipped_not_found
+
+    original_bytes = path.read_bytes()
+    _atomic_write_yaml(path, data)
+    _verify_or_rollback(path, original_bytes)
+    # Sort so callers (and tests) see a deterministic order regardless of
+    # the order ids appeared in the request or the file.
+    return sorted(deleted), skipped_not_found
+
+
 def site_dir_name(site: dict | Site) -> str:
     """Resolve the per-site directory name for `<run_root>/<NAME>/`.
 
@@ -421,9 +542,12 @@ __all__ = [
     "SiteNotFound",
     "slugify",
     "dedupe_slug",
+    "next_numeric_id",
     "load_sites",
     "site_dir_name",
     "add_site",
+    "bulk_add_sites",
     "update_site",
     "delete_site",
+    "bulk_delete_sites",
 ]
