@@ -63,8 +63,11 @@ export function ReportsPage() {
 
   return (
     <div className="flex h-full">
-      {/* --- Date + run picker (always visible) ------------------------- */}
-      <div className="flex w-64 flex-col border-r border-slate-200 bg-white">
+      {/* --- Date + run picker (always visible) -------------------------
+          Narrow on purpose - the column only ever shows a DD-MM-YYYY
+          date and a truncated 12-char run id. Anything wider just steals
+          width from the detail panel where the screenshots live. */}
+      <div className="flex w-48 flex-col border-r border-slate-200 bg-white">
         <header className="border-b border-slate-200 px-4 py-3">
           <h1 className="text-lg font-semibold">Reports</h1>
           <p className="text-xs text-slate-500">
@@ -126,9 +129,12 @@ export function ReportsPage() {
         </div>
       </div>
 
-      {/* --- URL list ---------------------------------------------------- */}
+      {/* --- URL list ----------------------------------------------------
+          Each row is a short numeric URL id + a small status pill, so a
+          tight column reads cleanly. Long site URLs already truncate
+          with ellipsis in the secondary line. */}
       {date && runId && (
-        <div className="flex w-96 flex-col border-r border-slate-200 bg-white">
+        <div className="flex w-64 flex-col border-r border-slate-200 bg-white">
           <header className="border-b border-slate-200 px-4 py-3">
             <div className="text-xs uppercase tracking-wide text-slate-500">
               Run
@@ -303,13 +309,45 @@ function UrlDetail({
         </div>
       ) : (
         <>
-          {/* --- Screenshots side-by-side --- */}
-          {screenshotUrls && (
-            <div className="mb-6 grid grid-cols-3 gap-3">
-              <ScreenshotPanel label="Baseline" src={screenshotUrls.baseline} />
-              <ScreenshotPanel label="Current" src={screenshotUrls.current} />
-              <ScreenshotPanel label="Diff" src={screenshotUrls.diff} />
+          {/* --- Screenshots side-by-side ---
+              For `no_changes` URLs the report stage skips screenshot
+              copying entirely (test_ui/report/generator.py: writes only
+              the marker file and returns early), so the three panels
+              would all render as empty "(none)" boxes - misleading UX
+              that suggests data is missing when in fact "no changes"
+              is a deliberate, complete result. Replace with a one-line
+              confirmation instead. */}
+          {detail.data.result_type === 'no_changes' ? (
+            <div className="mb-6 rounded-md border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-900">
+              No visual changes detected; baseline and current matched
+              pixel-for-pixel. Screenshots were not copied to the report
+              dir (still available under{' '}
+              <code className="rounded bg-white px-1 text-[11px]">
+                data/baseline/
+              </code>{' '}
+              and{' '}
+              <code className="rounded bg-white px-1 text-[11px]">
+                data/current/
+              </code>
+              if you need to eyeball them).
             </div>
+          ) : (
+            screenshotUrls && (
+              <div className="mb-6 grid grid-cols-3 gap-3">
+                <ScreenshotPanel label="Baseline" src={screenshotUrls.baseline} />
+                <ScreenshotPanel label="Current" src={screenshotUrls.current} />
+                {/* The Diff panel shows nothing when the comparator
+                    didn't detect a visual change (because the change
+                    was HTML/CSS/JS-only). Default "(none)" was
+                    confusing operators - replace with a contextual
+                    note so they understand it's intentional. */}
+                <ScreenshotPanel
+                  label="Diff"
+                  src={screenshotUrls.diff}
+                  emptyMessage="No visual diff (change was in HTML / CSS / JS, not the rendering)"
+                />
+              </div>
+            )
           )}
 
           {/* --- AI analysis JSON --- */}
@@ -339,9 +377,11 @@ function UrlDetail({
 function ScreenshotPanel({
   label,
   src,
+  emptyMessage = '(none)',
 }: {
   label: string
   src: string | null
+  emptyMessage?: string
 }) {
   return (
     <div className="overflow-hidden rounded-md border border-slate-200 bg-white">
@@ -362,8 +402,8 @@ function ScreenshotPanel({
           />
         </a>
       ) : (
-        <div className="flex h-32 items-center justify-center text-xs text-slate-400">
-          (none)
+        <div className="flex h-32 items-center justify-center px-3 text-center text-xs text-slate-500">
+          {emptyMessage}
         </div>
       )}
     </div>

@@ -6,6 +6,7 @@
  * key conventions. The backend's wire shapes are imported from the
  * generated schema (`components['schemas'][...]`) - no hand-rolled types.
  */
+import { useCallback, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
 import { api } from './client'
@@ -102,6 +103,25 @@ export function useCreateSite() {
         )
       }
       return data
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['sites'] }),
+  })
+}
+
+export function useBulkCreateSites() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async (urls: string[]) => {
+      const { data, error, response } = await api.POST('/api/sites/bulk', {
+        body: { urls },
+      })
+      if (error) {
+        throw Object.assign(
+          new Error(`bulk create failed: HTTP ${response.status}`),
+          { status: response.status, detail: error },
+        )
+      }
+      return data ?? []
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ['sites'] }),
   })
@@ -240,6 +260,29 @@ export function useDeleteSite() {
           { status: response.status, detail: error },
         )
       }
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['sites'] }),
+  })
+}
+
+// POST /api/sites/bulk-delete - remove many sites in one atomic write.
+// Mirrors useBulkDeleteRuns: returns per-id outcomes so the UI can show
+// "deleted N, skipped K not-found" toast.
+export function useBulkDeleteSites() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async (ids: string[]) => {
+      const { data, error, response } = await api.POST(
+        '/api/sites/bulk-delete',
+        { body: { ids } },
+      )
+      if (error) {
+        throw Object.assign(
+          new Error(`bulk delete failed: HTTP ${response.status}`),
+          { status: response.status, detail: error },
+        )
+      }
+      return data!
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ['sites'] }),
   })
@@ -464,4 +507,280 @@ export function useRetryRun() {
       qc.invalidateQueries({ queryKey: ['runs'] })
     },
   })
+}
+
+export function useDeleteRun() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async (dbId: number) => {
+      const { error, response } = await api.DELETE('/api/runs/{db_id}', {
+        params: { path: { db_id: dbId } },
+      })
+      if (error) {
+        throw Object.assign(
+          new Error(`delete failed: HTTP ${response.status}`),
+          { status: response.status, detail: error },
+        )
+      }
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['runs'] })
+      qc.invalidateQueries({ queryKey: ['dates'] })
+    },
+  })
+}
+
+export function useBulkDeleteRuns() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async (dbIds: number[]) => {
+      const { data, error, response } = await api.POST(
+        '/api/runs/bulk-delete',
+        { body: { db_ids: dbIds } },
+      )
+      if (error) {
+        throw Object.assign(
+          new Error(`bulk delete failed: HTTP ${response.status}`),
+          { status: response.status, detail: error },
+        )
+      }
+      return data!
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['runs'] })
+      qc.invalidateQueries({ queryKey: ['dates'] })
+    },
+  })
+}
+
+// ---------------------------------------------------------------------------
+// useRunAll - frontend-orchestrated chain of the 4 stages.
+//
+// Sequence: baseline -> current -> comparator -> report. Each step spawns
+// via POST /api/runs and then polls GET /api/runs/{db_id} until terminal.
+// The chain stops on the first non-`done` terminal status.
+//
+// 409 handling: if the backend reports an active run for the same kind+date,
+// we adopt its db_id from `detail.existing_db_id` and wait on that row
+// instead of erroring out - lets the operator click "Run all" while a
+// previous step is still in flight.
+//
+// Lives outside useMutation because we need to expose per-step progress
+// (currentStep / currentKind) which doesn't fit the single-mutation model.
+// ---------------------------------------------------------------------------
+
+const RUN_ALL_SEQUENCE: ReadonlyArray<RunKind> = [
+  'baseline',
+  'current',
+  'comparator',
+  'report',
+]
+
+const POLL_INTERVAL_MS = 2000
+
+export type RunAllPhase =
+  | 'idle'
+  | 'running'
+  | 'success'
+  | 'failed'
+  | 'canceled'
+
+export type RunAllState = {
+  phase: RunAllPhase
+  // 1-indexed for display; 0 while idle.
+  currentStep: number
+  totalSteps: number
+  currentKind: RunKind | null
+  // db_ids the chain has spawned (or adopted via 409). Useful for
+  // jumping into the row's detail panel after the chain finishes.
+  spawnedDbIds: Partial<Record<RunKind, number>>
+  // Set when phase === 'failed': human message + which stage broke.
+  error: string | null
+  failedKind: RunKind | null
+}
+
+const INITIAL_STATE: RunAllState = {
+  phase: 'idle',
+  currentStep: 0,
+  totalSteps: RUN_ALL_SEQUENCE.length,
+  currentKind: null,
+  spawnedDbIds: {},
+  error: null,
+  failedKind: null,
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+export function useRunAll() {
+  const qc = useQueryClient()
+  const [state, setState] = useState<RunAllState>(INITIAL_STATE)
+  // Cancel signal shared with the running async chain. A ref (not state)
+  // because the chain reads it inside its loop without re-rendering.
+  const canceledRef = useRef(false)
+
+  const spawnOne = useCallback(
+    async (kind: RunKind): Promise<number> => {
+      // Build the body openapi-fetch wants for this exact kind. Mirrors the
+      // dispatch in useSpawnRun so the chain doesn't drift if a kind grows
+      // a required field.
+      const result = await (() => {
+        switch (kind) {
+          case 'baseline':
+            return api.POST('/api/runs', { body: { kind: 'baseline' } })
+          case 'current':
+            return api.POST('/api/runs', { body: { kind: 'current' } })
+          case 'comparator':
+            return api.POST('/api/runs', { body: { kind: 'comparator' } })
+          case 'report':
+            return api.POST('/api/runs', { body: { kind: 'report' } })
+          default: {
+            const _exhaustive: never = kind
+            throw new Error(
+              `useRunAll: unhandled RunKind ${JSON.stringify(_exhaustive)}`,
+            )
+          }
+        }
+      })()
+
+      if (result.error) {
+        const status = result.response.status
+        // 409 = an active run for kind+date already exists. The backend
+        // returns its db_id in detail.existing_db_id - adopt it instead
+        // of failing the chain.
+        if (status === 409) {
+          const detail = result.error as { detail?: { existing_db_id?: number } }
+          const existing =
+            detail?.detail?.existing_db_id ??
+            (result.error as { existing_db_id?: number }).existing_db_id
+          if (typeof existing === 'number') return existing
+        }
+        throw Object.assign(
+          new Error(`spawn ${kind} failed: HTTP ${status}`),
+          { status, detail: result.error },
+        )
+      }
+      return result.data!.db_id
+    },
+    [],
+  )
+
+  const pollUntilTerminal = useCallback(
+    async (dbId: number): Promise<RunStatus> => {
+      // Polls every POLL_INTERVAL_MS until the row reaches a terminal
+      // state or the operator cancels. Bails out cleanly on cancel so
+      // the chain doesn't keep firing requests after a stop.
+      while (!canceledRef.current) {
+        const { data, error } = await api.GET('/api/runs/{db_id}', {
+          params: { path: { db_id: dbId } },
+        })
+        if (error) {
+          throw Object.assign(new Error(`poll db_id=${dbId} failed`), {
+            detail: error,
+          })
+        }
+        const row = data!
+        if (TERMINAL_STATUSES.has(row.status)) return row.status
+        await sleep(POLL_INTERVAL_MS)
+      }
+      // Caller checks canceledRef and short-circuits before consuming this.
+      return 'interrupted'
+    },
+    [],
+  )
+
+  const start = useCallback(() => {
+    if (state.phase === 'running') return
+    canceledRef.current = false
+    setState({ ...INITIAL_STATE, phase: 'running' })
+
+    void (async () => {
+      const spawned: Partial<Record<RunKind, number>> = {}
+      for (let i = 0; i < RUN_ALL_SEQUENCE.length; i++) {
+        const kind = RUN_ALL_SEQUENCE[i]
+        if (canceledRef.current) {
+          setState((s) => ({ ...s, phase: 'canceled' }))
+          return
+        }
+        setState((s) => ({
+          ...s,
+          currentStep: i + 1,
+          currentKind: kind,
+          spawnedDbIds: { ...spawned },
+        }))
+
+        let dbId: number
+        try {
+          dbId = await spawnOne(kind)
+        } catch (e) {
+          // Surface the spawn failure with the kind that broke so the
+          // operator can jump straight to the right row.
+          setState((s) => ({
+            ...s,
+            phase: 'failed',
+            failedKind: kind,
+            error: (e as Error).message,
+          }))
+          qc.invalidateQueries({ queryKey: ['runs'] })
+          return
+        }
+        spawned[kind] = dbId
+        setState((s) => ({ ...s, spawnedDbIds: { ...spawned } }))
+        // New row landed -> refresh the table so the operator sees it
+        // appear with status=pending immediately.
+        qc.invalidateQueries({ queryKey: ['runs'] })
+
+        const terminal = await pollUntilTerminal(dbId)
+        if (canceledRef.current) {
+          setState((s) => ({
+            ...s,
+            phase: 'canceled',
+            spawnedDbIds: { ...spawned },
+          }))
+          return
+        }
+        if (terminal !== 'done') {
+          // Stage didn't complete cleanly. Stop the chain and point the
+          // operator at the failed row.
+          setState((s) => ({
+            ...s,
+            phase: 'failed',
+            failedKind: kind,
+            error: `${kind} ended with status "${terminal}"`,
+            spawnedDbIds: { ...spawned },
+          }))
+          qc.invalidateQueries({ queryKey: ['runs'] })
+          return
+        }
+      }
+
+      setState((s) => ({
+        ...s,
+        phase: 'success',
+        currentKind: null,
+        spawnedDbIds: { ...spawned },
+      }))
+      // A new report just landed -> invalidate the per-report cache so
+      // the Reports page picks it up. Same trigger as useSpawnRun.
+      qc.invalidateQueries({ queryKey: ['runs'] })
+      qc.invalidateQueries({ queryKey: ['dates'] })
+      qc.invalidateQueries({ queryKey: ['report'] })
+    })()
+  }, [state.phase, spawnOne, pollUntilTerminal, qc])
+
+  const cancel = useCallback(() => {
+    if (state.phase !== 'running') return
+    // Sets the stop signal for the chain loop. The in-flight subprocess
+    // keeps running on the server (the dashboard has no kill endpoint
+    // today); we just stop launching the next stage.
+    canceledRef.current = true
+  }, [state.phase])
+
+  const reset = useCallback(() => {
+    canceledRef.current = false
+    setState(INITIAL_STATE)
+  }, [])
+
+  return { state, start, cancel, reset }
 }

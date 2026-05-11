@@ -1,18 +1,20 @@
 /**
  * Sites page: full CRUD over `sites.yml` via the dashboard API.
  *
- * Layout: a top "add" form (always visible), then the table. Each row
- * has inline edit (toggles to a 2-input form) + delete (with a JS
- * confirm - keeping the MVP simple; a confirm modal would be easy to
- * add later if the operator-friction outweighs the click).
+ * Layout:
+ *   - Single-add form (always visible) for the common one-URL case.
+ *   - Bulk-add panel (collapsed by default) for pasting many URLs.
+ *   - Sites table with inline edit + delete.
  *
- * The id is server-generated from the slugified name, so the create form
- * has no id field. Edits are name + URL only (id is immutable; rename
- * via delete + recreate).
+ * IDs are auto-assigned as sequential numbers (1, 2, 3, ...) by the
+ * backend's `next_numeric_id`. Operator never sets an id; rename via
+ * delete + re-create.
  */
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 
 import {
+  useBulkCreateSites,
+  useBulkDeleteSites,
   useCreateSite,
   useDeleteSite,
   useSites,
@@ -23,9 +25,81 @@ import {
 export function SitesPage() {
   const sites = useSites()
   const create = useCreateSite()
+  const bulk = useBulkCreateSites()
+  const bulkDelete = useBulkDeleteSites()
   const [name, setName] = useState('')
   const [url, setUrl] = useState('')
   const [editingId, setEditingId] = useState<string | null>(null)
+  const [bulkOpen, setBulkOpen] = useState(false)
+  const [bulkText, setBulkText] = useState('')
+  // Bulk-select state. Mirrors RunsPage: Set<string> for fast contains
+  // checks per-row, gets passed through `bulk_delete_sites` as a list.
+  const [checkedIds, setCheckedIds] = useState<Set<string>>(new Set())
+
+  // Memo'd so the `?? []` fallback doesn't allocate a fresh array each
+  // render; otherwise the `allChecked` useMemo below would re-fire on
+  // every parent re-render and the eslint exhaustive-deps lint complains.
+  const items = useMemo(() => sites.data ?? [], [sites.data])
+  // True when EVERY visible row is checked - drives the header checkbox
+  // tristate.
+  const allChecked = useMemo(
+    () => items.length > 0 && items.every((s) => checkedIds.has(s.id)),
+    [items, checkedIds],
+  )
+
+  function toggleOne(id: string) {
+    setCheckedIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  function toggleAll() {
+    setCheckedIds((prev) => {
+      const next = new Set(prev)
+      if (allChecked) {
+        for (const s of items) next.delete(s.id)
+      } else {
+        for (const s of items) next.add(s.id)
+      }
+      return next
+    })
+  }
+
+  function clearSelection() {
+    setCheckedIds(new Set())
+  }
+
+  function confirmAndBulkDelete() {
+    const ids = Array.from(checkedIds)
+    if (ids.length === 0) return
+    // Show up to 5 ids in the prompt so the operator can sanity-check
+    // what's about to disappear; truncate beyond that to keep the
+    // dialog readable.
+    const preview = ids.slice(0, 5).join(', ')
+    const tail = ids.length > 5 ? `, …(+${ids.length - 5} more)` : ''
+    if (
+      !window.confirm(
+        `Remove ${ids.length} site${ids.length === 1 ? '' : 's'}?\n\n` +
+          `IDs: ${preview}${tail}\n\n` +
+          'On-disk per-site data dirs are NOT touched - historical ' +
+          'reports stay readable; only future runs stop including these sites.',
+      )
+    ) {
+      return
+    }
+    bulkDelete.mutate(ids, {
+      onSuccess: (result) => {
+        // If the row being edited just got deleted, close the inline form.
+        if (editingId !== null && (result.deleted ?? []).includes(editingId)) {
+          setEditingId(null)
+        }
+        clearSelection()
+      },
+    })
+  }
 
   function submitCreate(e: React.FormEvent) {
     e.preventDefault()
@@ -39,6 +113,30 @@ export function SitesPage() {
       },
     )
   }
+
+  function submitBulk(e: React.FormEvent) {
+    e.preventDefault()
+    // Split on newlines, trim, drop blanks. The backend rejects empty
+    // strings (min_length=1) so the trim+filter on the client is purely
+    // a UX nicety - operator pastes a list with stray empty lines and
+    // we don't make them clean it manually.
+    const urls = bulkText
+      .split('\n')
+      .map((s) => s.trim())
+      .filter((s) => s.length > 0)
+    if (urls.length === 0) return
+    bulk.mutate(urls, {
+      onSuccess: () => {
+        setBulkText('')
+        setBulkOpen(false)
+      },
+    })
+  }
+
+  const parsedBulkCount = bulkText
+    .split('\n')
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0).length
 
   return (
     <div className="flex h-full flex-col">
@@ -85,6 +183,13 @@ export function SitesPage() {
           >
             {create.isPending ? 'Adding…' : 'Add site'}
           </button>
+          <button
+            type="button"
+            onClick={() => setBulkOpen((v) => !v)}
+            className="rounded-md border border-slate-300 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-100"
+          >
+            {bulkOpen ? 'Hide bulk' : 'Add multiple'}
+          </button>
         </form>
         {create.isError && (
           <div className="mt-2 flex items-start justify-between gap-2 text-xs text-red-700">
@@ -99,7 +204,110 @@ export function SitesPage() {
             </button>
           </div>
         )}
+
+        {bulkOpen && (
+          <form
+            onSubmit={submitBulk}
+            className="mt-3 rounded-md border border-slate-200 bg-slate-50 p-3"
+          >
+            <label className="block text-xs text-slate-600">
+              <span className="mb-1 block font-medium">
+                Paste URLs (one per line)
+              </span>
+              <textarea
+                value={bulkText}
+                onChange={(e) => setBulkText(e.target.value)}
+                rows={6}
+                placeholder={
+                  'https://example.com/foo\nhttps://example.com/bar\nhttps://example.com/baz'
+                }
+                className="w-full rounded-md border border-slate-300 bg-white px-2 py-1 font-mono text-xs"
+              />
+            </label>
+            <div className="mt-2 flex items-center justify-between">
+              <span className="text-xs text-slate-500">
+                {parsedBulkCount === 0
+                  ? 'IDs and names auto-generated. URL becomes the name (rename later via Edit).'
+                  : `${parsedBulkCount} URL${parsedBulkCount === 1 ? '' : 's'} ready to add`}
+              </span>
+              <button
+                type="submit"
+                disabled={bulk.isPending || parsedBulkCount === 0}
+                className="rounded-md bg-slate-900 px-3 py-1.5 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-50 hover:bg-slate-700"
+              >
+                {bulk.isPending
+                  ? 'Adding…'
+                  : `Add ${parsedBulkCount || ''} site${parsedBulkCount === 1 ? '' : 's'}`}
+              </button>
+            </div>
+            {bulk.isError && (
+              <div className="mt-2 flex items-start justify-between gap-2 text-xs text-red-700">
+                <span>
+                  Bulk add failed (no sites were added):{' '}
+                  {(bulk.error as Error).message}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => bulk.reset()}
+                  className="rounded px-2 py-0.5 text-xs text-red-700 hover:bg-red-100"
+                  aria-label="Dismiss error"
+                >
+                  Dismiss
+                </button>
+              </div>
+            )}
+          </form>
+        )}
       </div>
+
+      {/* Bulk action bar - only visible when at least one row is checked.
+          Mirrors the RunsPage pattern so the affordance reads identically
+          across the dashboard. */}
+      {checkedIds.size > 0 && (
+        <div className="flex items-center justify-between border-b border-slate-200 bg-blue-50 px-6 py-2 text-sm">
+          <span className="text-slate-700">
+            {checkedIds.size} site{checkedIds.size === 1 ? '' : 's'} selected
+          </span>
+          <div className="flex gap-2">
+            <button
+              onClick={clearSelection}
+              className="rounded border border-slate-300 bg-white px-3 py-1 text-xs hover:bg-slate-100"
+            >
+              Clear
+            </button>
+            <button
+              onClick={confirmAndBulkDelete}
+              disabled={bulkDelete.isPending}
+              className="rounded bg-red-600 px-3 py-1 text-xs font-medium text-white disabled:opacity-50 hover:bg-red-700"
+            >
+              {bulkDelete.isPending ? 'Deleting…' : `Delete ${checkedIds.size}`}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Bulk-delete outcome - one-cycle toast after a successful mutation.
+          Skipped lists matter when the operator selected an id that another
+          tab already deleted; this surfaces it cleanly. */}
+      {bulkDelete.isSuccess && bulkDelete.data && (
+        <BulkDeleteResultBanner
+          result={bulkDelete.data}
+          onDismiss={() => bulkDelete.reset()}
+        />
+      )}
+      {bulkDelete.isError && (
+        <div className="flex items-center justify-between border-b border-red-200 bg-red-50 px-6 py-2 text-sm text-red-800">
+          <span>
+            Bulk delete failed: {(bulkDelete.error as Error).message}
+          </span>
+          <button
+            onClick={() => bulkDelete.reset()}
+            className="rounded px-2 py-1 text-xs hover:bg-red-100"
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
 
       <div className="flex-1 overflow-auto">
         {sites.isError ? (
@@ -110,14 +318,25 @@ export function SitesPage() {
           <table className="w-full text-sm">
             <thead className="sticky top-0 border-b border-slate-200 bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
               <tr>
+                <th className="w-[1%] px-4 py-2 text-left">
+                  <input
+                    type="checkbox"
+                    checked={allChecked}
+                    onChange={toggleAll}
+                    aria-label="Select all sites"
+                    className="cursor-pointer"
+                  />
+                </th>
                 <th className="px-4 py-2 text-left">ID</th>
                 <th className="px-4 py-2 text-left">Name</th>
                 <th className="px-4 py-2 text-left">URL</th>
-                <th className="px-4 py-2 text-right">Actions</th>
+                <th className="w-[1%] whitespace-nowrap px-4 py-2 text-right">
+                  Actions
+                </th>
               </tr>
             </thead>
             <tbody>
-              {(sites.data ?? []).map((site) => (
+              {items.map((site) => (
                 <SiteRow
                   // Key strategy:
                   //   - When NOT editing, include name+url so a remote
@@ -126,11 +345,7 @@ export function SitesPage() {
                   //     state from new props. Round-2 #M9 fix.
                   //   - When editing THIS row, drop name+url from the
                   //     key so an in-flight remote update doesn't wipe
-                  //     the user's mid-typing input. Round-3 #M1 fix -
-                  //     the M9 fix was correct for stale-edit prevention
-                  //     but introduced a worse bug where the user's
-                  //     own typing could vanish if a refetch landed
-                  //     between keystrokes.
+                  //     the user's mid-typing input. Round-3 #M1 fix.
                   key={
                     editingId === site.id
                       ? site.id
@@ -138,6 +353,8 @@ export function SitesPage() {
                   }
                   site={site}
                   editing={editingId === site.id}
+                  checked={checkedIds.has(site.id)}
+                  onToggle={() => toggleOne(site.id)}
                   onStartEdit={() => setEditingId(site.id)}
                   onCancelEdit={() => setEditingId(null)}
                   onSaveDone={() => setEditingId(null)}
@@ -158,12 +375,16 @@ export function SitesPage() {
 function SiteRow({
   site,
   editing,
+  checked,
+  onToggle,
   onStartEdit,
   onCancelEdit,
   onSaveDone,
 }: {
   site: SiteOut
   editing: boolean
+  checked: boolean
+  onToggle: () => void
   onStartEdit: () => void
   onCancelEdit: () => void
   onSaveDone: () => void
@@ -175,10 +396,7 @@ function SiteRow({
 
   function submitEdit(e: React.FormEvent) {
     e.preventDefault()
-    update.mutate(
-      { id: site.id, name, url },
-      { onSuccess: onSaveDone },
-    )
+    update.mutate({ id: site.id, name, url }, { onSuccess: onSaveDone })
   }
 
   function confirmDelete() {
@@ -186,9 +404,25 @@ function SiteRow({
     remove.mutate(site.id)
   }
 
+  // Per-row checkbox cell. Identical structure in both edit + view modes
+  // so the column alignment stays clean and the operator can select rows
+  // without leaving edit mode.
+  const checkboxCell = (
+    <td className="w-[1%] px-4 py-2">
+      <input
+        type="checkbox"
+        checked={checked}
+        onChange={onToggle}
+        aria-label={`Select site ${site.id}`}
+        className="cursor-pointer"
+      />
+    </td>
+  )
+
   if (editing) {
     return (
       <tr className="border-b border-slate-100 bg-blue-50">
+        {checkboxCell}
         <td className="px-4 py-2 font-mono text-xs text-slate-500">{site.id}</td>
         <td className="px-4 py-2">
           <input
@@ -204,8 +438,11 @@ function SiteRow({
             className="w-full rounded border border-slate-300 px-2 py-1 text-sm"
           />
         </td>
-        <td className="px-4 py-2 text-right">
-          <form onSubmit={submitEdit} className="inline-flex gap-2">
+        <td className="w-[1%] whitespace-nowrap px-4 py-2 text-right">
+          <form
+            onSubmit={submitEdit}
+            className="flex justify-end gap-2"
+          >
             <button
               type="submit"
               disabled={update.isPending}
@@ -228,6 +465,7 @@ function SiteRow({
 
   return (
     <tr className="border-b border-slate-100 hover:bg-slate-50">
+      {checkboxCell}
       <td className="px-4 py-2 font-mono text-xs text-slate-500">{site.id}</td>
       <td className="px-4 py-2">{site.name}</td>
       <td className="px-4 py-2 text-xs text-slate-600">
@@ -240,21 +478,72 @@ function SiteRow({
           {site.url}
         </a>
       </td>
-      <td className="px-4 py-2 text-right">
-        <button
-          onClick={onStartEdit}
-          className="mr-2 rounded border border-slate-300 px-2 py-1 text-xs hover:bg-slate-100"
-        >
-          Edit
-        </button>
-        <button
-          onClick={confirmDelete}
-          disabled={remove.isPending}
-          className="rounded border border-red-300 px-2 py-1 text-xs text-red-700 disabled:opacity-50 hover:bg-red-50"
-        >
-          {remove.isPending ? '…' : 'Delete'}
-        </button>
+      {/*
+        Action buttons: `flex` + `gap-2` keeps Edit and Delete on one row.
+        `whitespace-nowrap` + `w-[1%]` on the cell forces the column to
+        shrink to fit (so the URL column gets the leftover width) and
+        the buttons never wrap onto two lines. Pre-fix the column was
+        narrow + buttons stacked vertically (operator screenshot).
+      */}
+      <td className="w-[1%] whitespace-nowrap px-4 py-2 text-right">
+        <div className="flex justify-end gap-2">
+          <button
+            onClick={onStartEdit}
+            className="rounded border border-slate-300 px-2 py-1 text-xs hover:bg-slate-100"
+          >
+            Edit
+          </button>
+          <button
+            onClick={confirmDelete}
+            disabled={remove.isPending}
+            className="rounded border border-red-300 px-2 py-1 text-xs text-red-700 disabled:opacity-50 hover:bg-red-50"
+          >
+            {remove.isPending ? '…' : 'Delete'}
+          </button>
+        </div>
       </td>
     </tr>
+  )
+}
+
+// --------------------------------------------------------------------------
+// BulkDeleteResultBanner - toast shown for one cycle after a successful
+// bulk-delete mutation. Same color vocabulary as the RunsPage banner:
+// green when fully clean, amber when anything was skipped (operator
+// should notice the no-op).
+// --------------------------------------------------------------------------
+
+function BulkDeleteResultBanner({
+  result,
+  onDismiss,
+}: {
+  result: {
+    deleted?: string[]
+    skipped_not_found?: string[]
+  }
+  onDismiss: () => void
+}) {
+  // OpenAPI marks these optional (Pydantic default_factory) - normalize
+  // to empty arrays for arithmetic.
+  const deleted = result.deleted ?? []
+  const skipped = result.skipped_not_found ?? []
+  const message = skipped.length
+    ? `Deleted ${deleted.length}. Skipped ${skipped.length} (already gone: ${skipped.join(', ')}).`
+    : `Deleted ${deleted.length} site${deleted.length === 1 ? '' : 's'}.`
+  const tone = skipped.length
+    ? 'border-amber-200 bg-amber-50 text-amber-900'
+    : 'border-green-200 bg-green-50 text-green-900'
+  return (
+    <div
+      className={`flex items-center justify-between border-b ${tone} px-6 py-2 text-sm`}
+    >
+      <span>{message}</span>
+      <button
+        onClick={onDismiss}
+        className="rounded px-2 py-1 text-xs hover:bg-white"
+      >
+        Dismiss
+      </button>
+    </div>
   )
 }

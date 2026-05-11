@@ -9,9 +9,12 @@ import { NavLink, Outlet } from 'react-router-dom'
 
 import { HealthBadge } from './HealthBadge'
 
+// Order matches the operator workflow: configure sites first, then
+// trigger runs, then read the resulting reports. The default landing
+// route in main.tsx redirects `/` -> `/sites` to match.
 const NAV_ITEMS = [
-  { to: '/runs', label: 'Runs' },
   { to: '/sites', label: 'Sites' },
+  { to: '/runs', label: 'Runs' },
   { to: '/reports', label: 'Reports' },
 ] as const
 

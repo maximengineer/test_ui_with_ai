@@ -22,9 +22,17 @@ import './index.css'
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
-      // Refetch on focus is too aggressive for a dashboard the operator
-      // tabs back to repeatedly - we rely on the per-hook interval.
-      refetchOnWindowFocus: false,
+      // Refetch on focus IS desirable here: subprocesses are progressing
+      // server-side while the operator's tab may be backgrounded, and
+      // TanStack Query's default `refetchIntervalInBackground: false`
+      // means our 3s/2s polling intervals pause whenever the tab is
+      // hidden. Without focus refetch, returning to the tab leaves
+      // stale pills (baseline shows "running" when it's actually "done")
+      // until the next interval tick - which is what manifested as
+      // "I have to refresh the page to see status updates". Focus
+      // refetch fires immediately on tab-back, then the per-hook
+      // `refetchInterval` resumes normal polling.
+      refetchOnWindowFocus: true,
       // One retry on transient failures; more would spam the backend.
       retry: 1,
     },
@@ -36,10 +44,11 @@ const router = createBrowserRouter([
     path: '/',
     element: <Layout />,
     children: [
-      // Default landing: Runs (most actionable for the operator).
-      { index: true, element: <Navigate to="/runs" replace /> },
-      { path: 'runs', element: <RunsPage /> },
+      // Default landing: Sites - matches the operator workflow
+      // (configure sites first, then trigger runs, then read reports).
+      { index: true, element: <Navigate to="/sites" replace /> },
       { path: 'sites', element: <SitesPage /> },
+      { path: 'runs', element: <RunsPage /> },
       { path: 'reports', element: <ReportsPage /> },
     ],
   },

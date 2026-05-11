@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "dev:full": "concurrently --names BACKEND,FRONTEND --prefix-colors blue,magenta --kill-others-on-fail \"AFR_DASHBOARD_DEV_MODE=true ../../.venv/bin/uvicorn dashboard.api:app --port 8080 --reload --app-dir ../..\" \"vite\"",
+    "dev:full": "concurrently --names BACKEND,FRONTEND --prefix-colors blue,magenta --kill-others-on-fail \"AFR_DASHBOARD_DEV_MODE=true ../../.venv/bin/uvicorn dashboard.api:app --port 8080 --reload --app-dir ../.. --reload-dir ../../dashboard/api --reload-dir ../../test_ui\" \"vite\"",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "preview": "vite preview",

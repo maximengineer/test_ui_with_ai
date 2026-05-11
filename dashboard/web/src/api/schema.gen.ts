@@ -21,10 +21,36 @@ export interface paths {
          * Post Sites
          * @description Append a new site. The id is auto-generated server-side from the
          *     slugified name with a `-N` suffix on collision (so id-conflict 409s
-         *     are structurally impossible — see `add_site`). Atomic write
+         *     are structurally impossible - see `add_site`). Atomic write
          *     preserves operator-authored YAML comments.
          */
         post: operations["post_sites_api_sites_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/sites/bulk": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Post Sites Bulk
+         * @description Append multiple sites at once. ids + names auto-generated.
+         *
+         *     All-or-nothing: any failing URL aborts the whole batch (Pydantic
+         *     validation error inside `bulk_add_sites` is re-raised here as a
+         *     422 with the offending URL identified). FastAPI's auto-422 only
+         *     applies to top-level body params, not to model construction
+         *     INSIDE the helper - so we catch + re-raise explicitly.
+         */
+        post: operations["post_sites_bulk_api_sites_bulk_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -44,7 +70,7 @@ export interface paths {
         /**
          * Delete Site Route
          * @description Remove a site from sites.yml. On-disk per-site data dirs are NOT
-         *     touched — historical artifacts remain readable; only future runs stop
+         *     touched - historical artifacts remain readable; only future runs stop
          *     including this site.
          */
         delete: operations["delete_site_route_api_sites__site_id__delete"];
@@ -52,9 +78,36 @@ export interface paths {
         head?: never;
         /**
          * Patch Site
-         * @description Mutate name and/or url. id is immutable — use DELETE + POST to rename.
+         * @description Mutate name and/or url. id is immutable - use DELETE + POST to rename.
          */
         patch: operations["patch_site_api_sites__site_id__patch"];
+        trace?: never;
+    };
+    "/api/sites/bulk-delete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Post Sites Bulk Delete
+         * @description Remove multiple sites from sites.yml in a single atomic write.
+         *
+         *     Per-id outcomes - any id not present in the file lands in
+         *     `skipped_not_found` rather than failing the call. Mirrors the
+         *     `runs/bulk-delete` semantics so the frontend can render the same
+         *     "deleted N, skipped K" toast in both places.
+         *
+         *     On-disk per-site data dirs are NOT touched (matches single-id DELETE).
+         */
+        post: operations["post_sites_bulk_delete_api_sites_bulk_delete_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/api/dates": {
@@ -109,7 +162,16 @@ export interface paths {
         get: operations["get_run_by_id_api_runs__db_id__get"];
         put?: never;
         post?: never;
-        delete?: never;
+        /**
+         * Delete Run Route
+         * @description Remove a run: DB row + on-disk artifacts + log file.
+         *
+         *     Refuses to delete a `pending` or `running` row (the runner is still
+         *     writing to the artifact dir; deleting from under it would orphan
+         *     the subprocess + leave half-written artifacts behind). Operator
+         *     must wait for the run to terminate.
+         */
+        delete: operations["delete_run_route_api_runs__db_id__delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -157,6 +219,32 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/runs/bulk-delete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Post Runs Bulk Delete
+         * @description Delete many runs at once. Best-effort: each row is attempted
+         *     independently; per-id outcomes returned in the response.
+         *
+         *     POST (not DELETE) because DELETE-with-body has spotty client +
+         *     proxy support. Idempotent in the operator's intuition: re-submitting
+         *     the same db_ids after a successful delete returns them all in
+         *     `skipped_not_found` rather than failing.
+         */
+        post: operations["post_runs_bulk_delete_api_runs_bulk_delete_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/runs/{db_id}/logs": {
         parameters: {
             query?: never;
@@ -170,7 +258,7 @@ export interface paths {
          *     `tail` to prevent runaway responses.
          *
          *     Returns 404 if the row doesn't exist OR if the log file hasn't been
-         *     created yet (the spawn opens it lazily — a row in `pending` for less
+         *     created yet (the spawn opens it lazily - a row in `pending` for less
          *     than a few ms may have no log).
          */
         get: operations["get_run_logs_api_runs__db_id__logs_get"];
@@ -276,17 +364,17 @@ export interface paths {
         };
         /**
          * Get Health
-         * @description Liveness check. Never raises — degraded states surface as `False`s.
+         * @description Liveness check. Never raises - degraded states surface as `False`s.
          *
          *     Does NOT use `DbDep`: if the DB itself can't be opened (disk full,
          *     permission denied on the WAL file), the dependency would raise BEFORE
          *     the handler runs and FastAPI would 500. We want the failure to
-         *     surface as `db_ok=False` instead — that's the entire point of having
+         *     surface as `db_ok=False` instead - that's the entire point of having
          *     a health route.
          *
          *     The AI analyzer probe is bounded to 2s so a hung analyzer container
          *     can't make `/api/health` itself appear hung. The overall `ok` mirrors
-         *     `db_ok` only — the analyzer being down doesn't invalidate the dashboard
+         *     `db_ok` only - the analyzer being down doesn't invalidate the dashboard
          *     (it just disables AI-dependent UI affordances client-side).
          */
         get: operations["get_health_api_health_get"];
@@ -359,7 +447,7 @@ export interface components {
          *
          *     `db_ok` False → SQLite open or migration failed; the dashboard is
          *     running in a degraded state and most routes will 500.
-         *     `ai_analyzer_ok` is checked with a 2s timeout — the dashboard never
+         *     `ai_analyzer_ok` is checked with a 2s timeout - the dashboard never
          *     hangs on a slow analyzer; a False here just disables AI-dependent
          *     UI affordances client-side.
          */
@@ -383,7 +471,7 @@ export interface components {
         };
         /**
          * ReportSummaryOut
-         * @description `GET /api/reports/{date}/{run_id}` — top-level summary. `run_id`,
+         * @description `GET /api/reports/{date}/{run_id}` - top-level summary. `run_id`,
          *     `started_at`, `finished_at`, `url_count` come from the manifest;
          *     `severity_counts` is computed from the per-URL files.
          */
@@ -405,11 +493,11 @@ export interface components {
         };
         /**
          * ReportUrlDetail
-         * @description `GET /api/reports/{date}/{run_id}/url?id=<url_id>` — the per-URL
+         * @description `GET /api/reports/{date}/{run_id}/url?id=<url_id>` - the per-URL
          *     AI analysis JSON, returned verbatim from disk.
          *
          *     Typed as `dict` because the AI analysis schema lives in
-         *     `test_ui/contracts/` and varies by `result_type` — wiring up a full
+         *     `test_ui/contracts/` and varies by `result_type` - wiring up a full
          *     discriminated union here would duplicate ~200 LOC of pydantic models
          *     that already exist in the contracts package, with the only payoff
          *     being typed access in the React drill-in (which renders it as JSON
@@ -439,7 +527,7 @@ export interface components {
          * ReportUrlSummary
          * @description One row in the `/api/reports/{date}/{run_id}/urls` listing.
          *
-         *     `severity` is only populated for `result_type='analysis_success'` —
+         *     `severity` is only populated for `result_type='analysis_success'` -
          *     the other result types don't have a meaningful severity. The frontend
          *     can surface a colored pill keyed off either `result_type` (always
          *     present) or `severity` (success-only).
@@ -463,6 +551,39 @@ export interface components {
             items: components["schemas"]["ReportUrlSummary"][];
         };
         /**
+         * RunBulkDeleteIn
+         * @description `POST /api/runs/bulk-delete` body. List of `db_id`s to remove.
+         *
+         *     POST-with-body (vs DELETE-with-body) because DELETE+body is allowed
+         *     by RFC 9110 but inconsistently supported across HTTP clients +
+         *     proxies. POST is the safe, universally-routable choice for "this
+         *     operation takes a list."
+         *
+         *     `min_length=1` rejects an empty list with 422 (no work = client bug).
+         */
+        RunBulkDeleteIn: {
+            /** Db Ids */
+            db_ids: number[];
+        };
+        /**
+         * RunBulkDeleteOut
+         * @description `POST /api/runs/bulk-delete` response.
+         *
+         *     Per-id outcomes returned so the operator can see exactly which
+         *     rows were removed vs skipped (e.g. the row was already gone, or
+         *     was in a non-deletable status). Best-effort batch semantics: a
+         *     single failing row doesn't abort the rest. The frontend can show
+         *     a toast like "deleted 7, skipped 2 (1 not found, 1 still running)".
+         */
+        RunBulkDeleteOut: {
+            /** Deleted */
+            deleted?: number[];
+            /** Skipped Not Found */
+            skipped_not_found?: number[];
+            /** Skipped In Flight */
+            skipped_in_flight?: number[];
+        };
+        /**
          * RunListOut
          * @description Paginated list response.
          */
@@ -477,7 +598,7 @@ export interface components {
          * @description One row from `runs`, projected for the wire.
          *
          *     `args_json` and `command_json` are exposed as parsed objects (not raw
-         *     strings) — saves the frontend a JSON.parse and gives openapi-typescript
+         *     strings) - saves the frontend a JSON.parse and gives openapi-typescript
          *     a typed shape to work with.
          */
         RunRow: {
@@ -543,11 +664,55 @@ export interface components {
             status: "pending" | "running" | "done" | "failed" | "interrupted";
         };
         /**
+         * SiteBulkCreateIn
+         * @description `POST /api/sites/bulk` body. URLs only - id and name are
+         *     auto-generated server-side (id = next sequential number,
+         *     name = the URL itself; operator can rename later via PATCH).
+         *
+         *     All-or-nothing: any single bad URL aborts the entire batch with
+         *     a 422 from the underlying Pydantic validator. Operator gets one
+         *     clear error and re-submits.
+         *
+         *     `min_length=1` on the list forbids `{"urls": []}` - sending no
+         *     work to do is a client bug, surface it as 422 not 200.
+         */
+        SiteBulkCreateIn: {
+            /** Urls */
+            urls: string[];
+        };
+        /**
+         * SiteBulkDeleteIn
+         * @description `POST /api/sites/bulk-delete` body. List of site ids to remove from
+         *     sites.yml in one atomic write.
+         *
+         *     `min_length=1` mirrors `SiteBulkCreateIn` - a client sending no work
+         *     is a bug; surface it as 422 not 200. Per-id outcomes (`deleted` vs
+         *     `skipped_not_found`) are returned in the response so the operator
+         *     can see which ids were already gone (e.g. another tab deleted them
+         *     in the meantime).
+         */
+        SiteBulkDeleteIn: {
+            /** Ids */
+            ids: string[];
+        };
+        /**
+         * SiteBulkDeleteOut
+         * @description `POST /api/sites/bulk-delete` response. Per-id outcomes mirror the
+         *     `runs/bulk-delete` shape so the frontend can render the same
+         *     "deleted N, skipped K" toast in both places.
+         */
+        SiteBulkDeleteOut: {
+            /** Deleted */
+            deleted?: string[];
+            /** Skipped Not Found */
+            skipped_not_found?: string[];
+        };
+        /**
          * SiteCreateIn
          * @description `POST /api/sites` body. `id` is auto-generated server-side from the
          *     slugified name + numeric dedup suffix; the client never sets it.
          *
-         *     `max_length` caps mirror the underlying `Site` model — defending at
+         *     `max_length` caps mirror the underlying `Site` model - defending at
          *     the wire boundary too means a 100KB URL gets rejected with a clear
          *     422 instead of bloating sites.yml at the persistence layer.
          */
@@ -571,7 +736,7 @@ export interface components {
         };
         /**
          * SiteUpdateIn
-         * @description `PATCH /api/sites/{id}` body. Both fields optional — operator can
+         * @description `PATCH /api/sites/{id}` body. Both fields optional - operator can
          *     rename without changing the URL or vice versa. `id` is immutable
          *     (changing it would invalidate existing per-site data dirs); the URL
          *     path component is authoritative.
@@ -587,7 +752,7 @@ export interface components {
          * @description `POST /api/sync` result. `synced` is the count of NEW rows inserted.
          *
          *     Re-running sync should be a no-op (returning `synced=0`) once the DB
-         *     has caught up to the on-disk state — the test pins this idempotency.
+         *     has caught up to the on-disk state - the test pins this idempotency.
          */
         SyncOut: {
             /** Synced */
@@ -664,6 +829,37 @@ export interface operations {
             };
         };
     };
+    post_sites_bulk_api_sites_bulk_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SiteBulkCreateIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SiteOut"][];
+                };
+            };
+            /** @description At least one URL failed validation; nothing was written */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     delete_site_route_api_sites__site_id__delete: {
         parameters: {
             query?: never;
@@ -732,6 +928,37 @@ export interface operations {
                 content?: never;
             };
             /** @description Body validation failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    post_sites_bulk_delete_api_sites_bulk_delete_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SiteBulkDeleteIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SiteBulkDeleteOut"];
+                };
+            };
+            /** @description Body validation failed (empty list, etc.) */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -876,6 +1103,49 @@ export interface operations {
             };
         };
     };
+    delete_run_route_api_runs__db_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                db_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description No row with this db_id */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Run is pending/running; refuse to delete in-flight */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     post_sync_api_sync_post: {
         parameters: {
             query?: never;
@@ -945,6 +1215,37 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
                 };
+            };
+        };
+    };
+    post_runs_bulk_delete_api_runs_bulk_delete_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RunBulkDeleteIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RunBulkDeleteOut"];
+                };
+            };
+            /** @description Empty db_ids list */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };
@@ -1137,7 +1438,9 @@ export interface operations {
                 url_id: string;
                 which: "baseline" | "current" | "diff";
             };
-            header?: never;
+            header?: {
+                "if-none-match"?: string | null;
+            };
             path: {
                 date: string;
                 run_id: string;
@@ -1155,6 +1458,13 @@ export interface operations {
                     "application/json": unknown;
                     "image/png": unknown;
                 };
+            };
+            /** @description Not modified - client's If-None-Match matched */
+            304: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Malformed parameters */
             400: {
