@@ -538,6 +538,43 @@ def find_active_run_for_kind_date(
     ).fetchone()
 
 
+# Statuses that block delete: an in-flight subprocess would still be
+# writing to the artifact dir, and removing the row from under it
+# leaves the runner with no DB target for its terminal-status update.
+# Operator must wait for completion (or kill via the future cancel
+# route) before deleting.
+_NON_DELETABLE_STATUSES = ("pending", "running")
+
+
+class RunNotDeletable(ValueError):
+    """The run is in a state that disallows deletion (pending/running)."""
+
+
+def delete_run(conn: sqlite3.Connection, db_id: int) -> sqlite3.Row | None:
+    """Remove a single run row. Returns the deleted row (for the caller
+    to do on-disk cleanup), or None if no row exists with `db_id`.
+
+    Raises `RunNotDeletable` if the row is `pending` or `running` -
+    refusing to delete an in-flight run is the operator-friendly choice
+    (the alternative is killing the subprocess + cleaning up; that's a
+    separate cancel route, not a delete).
+
+    DB-level only: caller is responsible for `data/<kind>/<date>/<run_id>/`
+    and log-file cleanup. Splitting that out keeps this function pure
+    SQL and tests-without-tmpfile-side-effects.
+    """
+    row = get_run(conn, db_id)
+    if row is None:
+        return None
+    if row["status"] in _NON_DELETABLE_STATUSES:
+        raise RunNotDeletable(
+            f"run id={db_id} is {row['status']!r}; refusing to delete an "
+            "in-flight run. Wait for it to terminate first."
+        )
+    conn.execute("DELETE FROM runs WHERE id = ?", (db_id,))
+    return row
+
+
 __all__ = [
     "RUN_KINDS_TUPLE",
     "RUN_STATUSES_TUPLE",
@@ -557,4 +594,6 @@ __all__ = [
     "find_active_run_for_kind_date",
     "list_runs",
     "get_run",
+    "delete_run",
+    "RunNotDeletable",
 ]

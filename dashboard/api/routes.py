@@ -34,6 +34,8 @@ from test_ui.common.run_id import is_valid_run_id, new_run_id
 from test_ui.common.sites import (
     SiteNotFound,
     add_site,
+    bulk_add_sites,
+    bulk_delete_sites,
     delete_site,
     load_sites,
     update_site,
@@ -42,7 +44,9 @@ from test_ui.config import settings
 
 from . import runner
 from .db import (
+    RunNotDeletable,
     connection_scope,
+    delete_run,
     find_active_run_for_kind_date,
     get_run,
     insert_pending_run,
@@ -59,10 +63,15 @@ from .models import (
     ReportUrlDetail,
     ReportUrlSummary,
     ReportUrlsOut,
+    RunBulkDeleteIn,
+    RunBulkDeleteOut,
     RunListOut,
     RunRequest,
     RunRow,
     RunSpawnedOut,
+    SiteBulkCreateIn,
+    SiteBulkDeleteIn,
+    SiteBulkDeleteOut,
     SiteCreateIn,
     SiteOut,
     SiteUpdateIn,
@@ -219,6 +228,36 @@ def post_sites(payload: SiteCreateIn) -> SiteOut:
     return SiteOut(id=site.id, name=site.name, url=site.url)
 
 
+@sites_router.post(
+    "/bulk",
+    response_model=list[SiteOut],
+    status_code=201,
+    responses={
+        422: {"description": "At least one URL failed validation; nothing was written"},
+    },
+)
+def post_sites_bulk(payload: SiteBulkCreateIn) -> list[SiteOut]:
+    """Append multiple sites at once. ids + names auto-generated.
+
+    All-or-nothing: any failing URL aborts the whole batch (Pydantic
+    validation error inside `bulk_add_sites` is re-raised here as a
+    422 with the offending URL identified). FastAPI's auto-422 only
+    applies to top-level body params, not to model construction
+    INSIDE the helper - so we catch + re-raise explicitly.
+    """
+    from pydantic import ValidationError
+
+    sites_path = _sites_path()
+    try:
+        sites = bulk_add_sites(sites_path, payload.urls)
+    except ValidationError as e:
+        # Surface the structured Pydantic errors so the operator sees
+        # which URL failed + why (matches the standard 422 shape FastAPI
+        # produces for request-body validation).
+        raise HTTPException(status_code=422, detail=e.errors()) from e
+    return [SiteOut(id=s.id, name=s.name, url=s.url) for s in sites]
+
+
 @sites_router.patch(
     "/{site_id}",
     response_model=SiteOut,
@@ -235,6 +274,28 @@ def patch_site(site_id: str, payload: SiteUpdateIn) -> SiteOut:
     except SiteNotFound as e:
         raise HTTPException(status_code=404, detail=str(e)) from e
     return SiteOut(id=site.id, name=site.name, url=site.url)
+
+
+@sites_router.post(
+    "/bulk-delete",
+    response_model=SiteBulkDeleteOut,
+    responses={
+        422: {"description": "Body validation failed (empty list, etc.)"},
+    },
+)
+def post_sites_bulk_delete(payload: SiteBulkDeleteIn) -> SiteBulkDeleteOut:
+    """Remove multiple sites from sites.yml in a single atomic write.
+
+    Per-id outcomes - any id not present in the file lands in
+    `skipped_not_found` rather than failing the call. Mirrors the
+    `runs/bulk-delete` semantics so the frontend can render the same
+    "deleted N, skipped K" toast in both places.
+
+    On-disk per-site data dirs are NOT touched (matches single-id DELETE).
+    """
+    sites_path = _sites_path()
+    deleted, skipped = bulk_delete_sites(sites_path, payload.ids)
+    return SiteBulkDeleteOut(deleted=deleted, skipped_not_found=skipped)
 
 
 @sites_router.delete(
@@ -277,6 +338,45 @@ def _is_valid_date_dir(name: str) -> bool:
     return True
 
 
+def _date_dir_has_published_run(date_dir: Path) -> bool:
+    """True if `date_dir` contains at least one real published run subdir.
+
+    The publish layout is::
+
+        data/<kind>/<DD-MM-YYYY>/
+            <ULID>/                  ← real published run
+            latest -> <ULID>          ← convenience symlink
+            .tmp-XXXX/                ← atomic-publish staging (rare; transient)
+
+    A date dir whose only contents are `latest` (possibly dangling after
+    the last run was deleted) or `.tmp-*` artifacts is effectively empty
+    from the operator's perspective and should NOT show up in the dates
+    listing - that's what causes "I deleted all runs but the date is
+    still there" reports.
+
+    Symlinks are excluded via `is_symlink()`; dot-prefixed entries via
+    the name check. Anything left that's a real directory counts.
+
+    Best-effort: per-entry stat failures (TOCTOU on a deleting parent
+    process, broken-symlink edge cases) are swallowed - the dashboard
+    would rather hide a date one render too early than 500 the page.
+    """
+    try:
+        for entry in date_dir.iterdir():
+            if entry.name.startswith("."):
+                continue
+            if entry.is_symlink():
+                continue
+            try:
+                if entry.is_dir():
+                    return True
+            except OSError:
+                continue
+    except (FileNotFoundError, PermissionError, NotADirectoryError):
+        return False
+    return False
+
+
 def _list_date_dirs(root: Path | None) -> list[str]:
     """Return DD-MM-YYYY dir names under `root`, newest first.
 
@@ -285,6 +385,8 @@ def _list_date_dirs(root: Path | None) -> list[str]:
       - dot-prefixed entries (`.tmp-*` workspaces shouldn't end up here
         but cheap to defend against)
       - anything not parseable as a real DD-MM-YYYY date (`_is_valid_date_dir`)
+      - date dirs with NO published run subdir (only stale `latest`
+        symlink etc.) - see `_date_dir_has_published_run`
 
     FileNotFoundError / PermissionError on `iterdir()` are caught (TOCTOU
     between `exists` and iteration is real on network mounts and during
@@ -300,7 +402,10 @@ def _list_date_dirs(root: Path | None) -> list[str]:
     dates = [
         p.name
         for p in entries
-        if p.is_dir() and not p.name.startswith(".") and _is_valid_date_dir(p.name)
+        if p.is_dir()
+        and not p.name.startswith(".")
+        and _is_valid_date_dir(p.name)
+        and _date_dir_has_published_run(p)
     ]
 
     # DD-MM-YYYY isn't lexically sortable - convert to YYYY-MM-DD for sort.
@@ -576,6 +681,171 @@ async def post_run_retry(db_id: int) -> RunSpawnedOut:
     # `Depends(...)` added to `post_runs`. The helper has the same body
     # so idempotency / precondition still apply.
     return await _spawn_run_for_request(request)
+
+
+def _cleanup_run_artifacts(row: sqlite3.Row) -> None:
+    """Best-effort removal of on-disk artifacts for a deleted run row.
+
+    Three things to clean up, all by-convention paths:
+      1. `data/<kind>/<date_dir>/<run_id>/` - the actual run output tree
+      2. `runs_log_dir / f"{db_id}.log"`     - the subprocess stdout/stderr
+      3. `runs_log_dir / f"{run_id}.run.json"` - the run-record file
+
+    All best-effort: a per-file failure is logged and skipped, never
+    raised. Goal is that the DB row is gone (the operator's intent);
+    leftover bytes are a tidy-up problem, not a correctness problem.
+    Without this cleanup, the next dashboard startup's existing-data
+    sync would re-add the row from the manifest still on disk - making
+    deletes ephemeral, which is the OPPOSITE of what the operator
+    wanted when they clicked Delete.
+    """
+    import shutil
+
+    kind = row["kind"]
+    date_dir = row["date_dir"]
+    run_id = row["run_id"]
+    db_id = row["id"]
+
+    # Map kind -> root. Same table as runner._build_command's reverse.
+    kind_root: Path | None = {
+        "baseline": settings.baseline_dir,
+        "current": settings.current_dir,
+        "comparator": settings.comparator_dir,
+        "report": settings.report_dir,
+    }.get(kind)
+
+    if kind_root is not None and date_dir and run_id:
+        run_root = kind_root / date_dir / run_id
+        if run_root.exists():
+            try:
+                shutil.rmtree(run_root)
+            except OSError as e:
+                logger.warning(
+                    f"delete: rmtree({run_root}) failed: {type(e).__name__}: {e}"
+                )
+        # If this was the last run in the date dir, drop the now-orphan
+        # `latest` symlink + the empty parent date dir. Otherwise the
+        # `/api/dates` endpoint would keep listing the date even though
+        # there's nothing to show, surfacing as a "ghost" plaque on the
+        # Reports page (operator screenshot bug).
+        _prune_empty_date_dir(kind_root / date_dir)
+
+    if settings.runs_log_dir is not None:
+        for path in (
+            settings.runs_log_dir / f"{db_id}.log",
+            settings.runs_log_dir / f"{run_id}.run.json",
+        ):
+            try:
+                path.unlink(missing_ok=True)
+            except OSError as e:
+                logger.warning(
+                    f"delete: unlink({path}) failed: {type(e).__name__}: {e}"
+                )
+
+
+def _prune_empty_date_dir(date_root: Path) -> None:
+    """Remove `<kind>/<date>/latest` and the date dir if no runs remain.
+
+    Runs through `_date_dir_has_published_run` to decide "empty": a dir
+    whose only contents are the `latest` symlink (possibly dangling) or
+    other non-publication artifacts is treated as empty and pruned.
+
+    Best-effort like the rest of `_cleanup_run_artifacts` - any OSError
+    (concurrent operator cleanup, permission flip from a Docker-as-root
+    workspace, etc.) is logged and swallowed; the DB row is already gone
+    so retry-on-error would only thrash.
+    """
+    if not date_root.exists() or not date_root.is_dir():
+        return
+    if _date_dir_has_published_run(date_root):
+        return
+    # Remove `latest` symlink (or any stale entry) before rmdir, since
+    # rmdir refuses non-empty dirs. We only get here when the only
+    # non-symlink contents are gone, so this loop's scope is small
+    # (typically just `latest`).
+    import shutil as _shutil
+
+    try:
+        for entry in date_root.iterdir():
+            try:
+                if entry.is_symlink() or entry.is_file():
+                    entry.unlink()
+                elif entry.is_dir():
+                    # Defensive: a dot-prefixed `.tmp-*` staging dir from
+                    # a crashed publish. shutil.rmtree handles it.
+                    _shutil.rmtree(entry, ignore_errors=True)
+            except OSError as e:
+                logger.warning(
+                    f"delete: cleanup of {entry} failed: {type(e).__name__}: {e}"
+                )
+        date_root.rmdir()
+    except OSError as e:
+        logger.warning(f"delete: prune({date_root}) failed: {type(e).__name__}: {e}")
+
+
+@runs_router.delete(
+    "/runs/{db_id}",
+    status_code=204,
+    responses={
+        404: {"description": "No row with this db_id"},
+        409: {"description": "Run is pending/running; refuse to delete in-flight"},
+    },
+)
+def delete_run_route(db_id: int) -> Response:
+    """Remove a run: DB row + on-disk artifacts + log file.
+
+    Refuses to delete a `pending` or `running` row (the runner is still
+    writing to the artifact dir; deleting from under it would orphan
+    the subprocess + leave half-written artifacts behind). Operator
+    must wait for the run to terminate.
+    """
+    if settings.runs_db_path is None:
+        raise RuntimeError("settings.runs_db_path is None")
+    with connection_scope(settings.runs_db_path) as conn:
+        try:
+            row = delete_run(conn, db_id)
+        except RunNotDeletable as e:
+            raise HTTPException(status_code=409, detail=str(e)) from e
+    if row is None:
+        raise HTTPException(status_code=404, detail=f"run id={db_id} not found")
+    _cleanup_run_artifacts(row)
+    return Response(status_code=204)
+
+
+@runs_router.post(
+    "/runs/bulk-delete",
+    response_model=RunBulkDeleteOut,
+    responses={
+        422: {"description": "Empty db_ids list"},
+    },
+)
+def post_runs_bulk_delete(payload: RunBulkDeleteIn) -> RunBulkDeleteOut:
+    """Delete many runs at once. Best-effort: each row is attempted
+    independently; per-id outcomes returned in the response.
+
+    POST (not DELETE) because DELETE-with-body has spotty client +
+    proxy support. Idempotent in the operator's intuition: re-submitting
+    the same db_ids after a successful delete returns them all in
+    `skipped_not_found` rather than failing.
+    """
+    if settings.runs_db_path is None:
+        raise RuntimeError("settings.runs_db_path is None")
+    out = RunBulkDeleteOut()
+    # Use one connection for the whole batch so we don't pay
+    # busy-timeout risk per id.
+    with connection_scope(settings.runs_db_path) as conn:
+        for db_id in payload.db_ids:
+            try:
+                row = delete_run(conn, db_id)
+            except RunNotDeletable:
+                out.skipped_in_flight.append(db_id)
+                continue
+            if row is None:
+                out.skipped_not_found.append(db_id)
+                continue
+            _cleanup_run_artifacts(row)
+            out.deleted.append(db_id)
+    return out
 
 
 def _request_from_dict(payload: dict) -> RunRequest:
@@ -873,6 +1143,30 @@ def get_report_summary(date: str, run_id: str) -> ReportSummaryOut:
     )
 
 
+def _url_dir_sort_key(p: Path) -> tuple[int, int, str]:
+    """Sort key that puts purely-numeric URL ids in numeric DESCENDING order
+    and falls back to lexicographic for legacy slug-style names.
+
+    Returned tuple: ``(bucket, -numeric, name)``.
+      - ``bucket`` is 0 for digit-only names (so they sort before slugs),
+        1 for everything else.
+      - ``-numeric`` makes higher numbers come first within the digit bucket.
+        We negate instead of using ``reverse=True`` so the slug bucket can
+        still sort ascending lexicographically.
+      - ``name`` is the lexicographic tiebreak for the slug bucket and a
+        deterministic tiebreak for the numeric bucket.
+
+    Why this exists: post-numeric-id migration (commit b51324d) URL dirs
+    are named "1", "2", ..., "39". Lexicographic sort gave "1, 10, 11,
+    ..., 19, 2, 20, ..." which read as scrambled. The operator wants
+    newest/highest-id first.
+    """
+    name = p.name
+    if name.isdigit():
+        return (0, -int(name), name)
+    return (1, 0, name)
+
+
 @reports_router.get(
     "/{date}/{run_id}/urls",
     response_model=ReportUrlsOut,
@@ -885,7 +1179,7 @@ def get_report_urls(date: str, run_id: str) -> ReportUrlsOut:
     """List of URLs in the report with their result_type + severity."""
     run_dir = _resolve_report_run_dir(date, run_id)
     items: list[ReportUrlSummary] = []
-    for url_dir in sorted(run_dir.iterdir(), key=lambda p: p.name):
+    for url_dir in sorted(run_dir.iterdir(), key=_url_dir_sort_key):
         if not url_dir.is_dir():
             continue
         result_type, payload = _classify_url_dir(url_dir)

@@ -83,6 +83,51 @@ class SiteCreateIn(BaseModel):
     url: str = Field(min_length=1, max_length=2048)
 
 
+class SiteBulkCreateIn(BaseModel):
+    """`POST /api/sites/bulk` body. URLs only - id and name are
+    auto-generated server-side (id = next sequential number,
+    name = the URL itself; operator can rename later via PATCH).
+
+    All-or-nothing: any single bad URL aborts the entire batch with
+    a 422 from the underlying Pydantic validator. Operator gets one
+    clear error and re-submits.
+
+    `min_length=1` on the list forbids `{"urls": []}` - sending no
+    work to do is a client bug, surface it as 422 not 200.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    urls: list[str] = Field(min_length=1, max_length=1000)
+
+
+class SiteBulkDeleteIn(BaseModel):
+    """`POST /api/sites/bulk-delete` body. List of site ids to remove from
+    sites.yml in one atomic write.
+
+    `min_length=1` mirrors `SiteBulkCreateIn` - a client sending no work
+    is a bug; surface it as 422 not 200. Per-id outcomes (`deleted` vs
+    `skipped_not_found`) are returned in the response so the operator
+    can see which ids were already gone (e.g. another tab deleted them
+    in the meantime).
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    ids: list[str] = Field(min_length=1, max_length=1000)
+
+
+class SiteBulkDeleteOut(BaseModel):
+    """`POST /api/sites/bulk-delete` response. Per-id outcomes mirror the
+    `runs/bulk-delete` shape so the frontend can render the same
+    "deleted N, skipped K" toast in both places."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    deleted: list[str] = Field(default_factory=list)
+    skipped_not_found: list[str] = Field(default_factory=list)
+
+
 class SiteUpdateIn(BaseModel):
     """`PATCH /api/sites/{id}` body. Both fields optional - operator can
     rename without changing the URL or vice versa. `id` is immutable
@@ -266,6 +311,39 @@ RunRequest = (
 )
 
 
+class RunBulkDeleteIn(BaseModel):
+    """`POST /api/runs/bulk-delete` body. List of `db_id`s to remove.
+
+    POST-with-body (vs DELETE-with-body) because DELETE+body is allowed
+    by RFC 9110 but inconsistently supported across HTTP clients +
+    proxies. POST is the safe, universally-routable choice for "this
+    operation takes a list."
+
+    `min_length=1` rejects an empty list with 422 (no work = client bug).
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    db_ids: list[int] = Field(min_length=1, max_length=1000)
+
+
+class RunBulkDeleteOut(BaseModel):
+    """`POST /api/runs/bulk-delete` response.
+
+    Per-id outcomes returned so the operator can see exactly which
+    rows were removed vs skipped (e.g. the row was already gone, or
+    was in a non-deletable status). Best-effort batch semantics: a
+    single failing row doesn't abort the rest. The frontend can show
+    a toast like "deleted 7, skipped 2 (1 not found, 1 still running)".
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    deleted: list[int] = Field(default_factory=list)
+    skipped_not_found: list[int] = Field(default_factory=list)
+    skipped_in_flight: list[int] = Field(default_factory=list)
+
+
 class RunSpawnedOut(BaseModel):
     """202 response from `POST /api/runs`. `db_id` lets the frontend poll
     `/api/runs/{db_id}` for status; `run_id` lets it correlate against the
@@ -381,6 +459,7 @@ __all__ = [
     "RunSource",
     "SiteOut",
     "SiteCreateIn",
+    "SiteBulkCreateIn",
     "SiteUpdateIn",
     "DatesOut",
     "RunRow",
@@ -393,6 +472,8 @@ __all__ = [
     "ReportRunRequest",
     "RunRequest",
     "RunSpawnedOut",
+    "RunBulkDeleteIn",
+    "RunBulkDeleteOut",
     "ReportSummaryOut",
     "ReportResultType",
     "ReportUrlSummary",
