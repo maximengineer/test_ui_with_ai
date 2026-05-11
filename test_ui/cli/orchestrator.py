@@ -35,11 +35,11 @@ class Orchestrator:
     ReportGenerator was constructing its own client and never closing it.
     """
 
-    def __init__(self, *, client: httpx.AsyncClient, gemini_url: str | None = None):
-        self.gemini_url = gemini_url or settings.ai_analyzer_service_url
+    def __init__(self, *, client: httpx.AsyncClient, ai_analyzer_url: str | None = None):
+        self.ai_analyzer_url = ai_analyzer_url or settings.ai_analyzer_service_url
         self.client = client
         self.comparator = ComparatorEngine()
-        self.reporter = ReportGenerator(settings, self.gemini_url, client=client)
+        self.reporter = ReportGenerator(settings, self.ai_analyzer_url, client=client)
 
     async def create_baseline(
         self,

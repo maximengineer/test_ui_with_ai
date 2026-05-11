@@ -125,7 +125,7 @@ class AIAnalysisResponse(_StrictModel):
     schema_version: str = SCHEMA_VERSION
     result_type: Literal["analysis_success"] = "analysis_success"
     request_id: str
-    model: str  # e.g. "gemini-2.5-pro"
+    model: str  # e.g. "qwen/qwen3.6-plus"
     prompt_sha256: str  # 64 hex chars
     overall_severity: Literal["CRITICAL", "WARNING", "SAFE"]
     business_impact: Literal["HIGH", "MEDIUM", "LOW", "NONE"]

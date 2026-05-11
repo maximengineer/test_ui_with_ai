@@ -43,11 +43,11 @@ class AIClient:
     def __init__(
         self,
         client: httpx.AsyncClient,
-        gemini_url: str,
+        ai_analyzer_url: str,
         ai_concurrency: int | None = None,
     ):
         self.client = client
-        self.gemini_url = gemini_url
+        self.ai_analyzer_url = ai_analyzer_url
         # Floor at 1: a Semaphore(0) would deadlock.
         concurrency = (
             ai_concurrency if ai_concurrency is not None else settings.ai_concurrency
@@ -120,7 +120,7 @@ class AIClient:
                 # by in-flight requests, not by total elapsed time.
                 async with self.semaphore:
                     response = await self.client.post(
-                        f"{self.gemini_url}/api/compare",
+                        f"{self.ai_analyzer_url}/api/compare",
                         json=ai_request,
                         timeout=120.0,
                     )

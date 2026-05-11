@@ -31,7 +31,7 @@ from .ai_client import AIClient
 class ReportGenerator:
     """Orchestrates the report stage: discovery → AI analysis → aggregate → render."""
 
-    def __init__(self, config, gemini_url: str, client: httpx.AsyncClient):
+    def __init__(self, config, ai_analyzer_url: str, client: httpx.AsyncClient):
         """The caller (Orchestrator) owns the httpx.AsyncClient lifecycle.
 
         Phase A.1.7 - client is constructed at the asyncio.run() boundary and
@@ -42,9 +42,9 @@ class ReportGenerator:
         in-flight AI requests (default 3, AFR_AI_CONCURRENCY env override).
         """
         self.config = config
-        self.gemini_url = gemini_url
+        self.ai_analyzer_url = ai_analyzer_url
         self.client = client
-        self.ai_client = AIClient(client=client, gemini_url=gemini_url)
+        self.ai_client = AIClient(client=client, ai_analyzer_url=ai_analyzer_url)
 
     # ------------------------------------------------------------------
     # Discovery + per-URL processing

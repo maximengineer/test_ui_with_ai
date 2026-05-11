@@ -12,7 +12,7 @@
       "Hero section moved 40px down"
     ]
   },
-  "model": "gemini-test-model",
+  "model": "test-model",
   "overall_severity": "WARNING",
   "prompt_sha256": "abc1230000000000000000000000000000000000000000000000000000000000",
   "recommendations": {

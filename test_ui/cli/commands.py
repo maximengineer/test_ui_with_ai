@@ -34,7 +34,7 @@ async def _open_orchestrator():
     that ReportGenerator used to construct internally.
     """
     async with httpx.AsyncClient(timeout=settings.ai_analyzer_timeout) as client:
-        yield Orchestrator(client=client, gemini_url=settings.ai_analyzer_service_url)
+        yield Orchestrator(client=client, ai_analyzer_url=settings.ai_analyzer_service_url)
 
 
 @click.group()
