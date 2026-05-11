@@ -1,7 +1,7 @@
 {
   "name": "ai-analyzer-service",
   "version": "1.0.0",
-  "description": "Node.js service that proxies UI regression analysis requests to Google Gemini. Validates incoming requests against the JSON Schema generated from Pydantic contracts in test_ui/contracts/.",
+  "description": "Node.js service that proxies UI regression analysis requests to an OpenAI-compatible chat completions endpoint (defaults to OpenRouter + qwen/qwen3.6-plus). Validates incoming requests against the JSON Schema generated from Pydantic contracts in test_ui/contracts/.",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
@@ -11,9 +11,9 @@
     "node": ">=24.0.0"
   },
   "dependencies": {
-    "@google/genai": "^1.51.0",
     "ajv": "^8.20.0",
     "ajv-formats": "^3.0.1",
-    "express": "^5.2.1"
+    "express": "^5.2.1",
+    "openai": "^6.10.0"
   }
 }

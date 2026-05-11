@@ -1,18 +1,26 @@
-// AI analyzer service - Phase A.1.4 rewrite.
+// AI analyzer service.
 //
-// Major changes vs. the prior version:
-// - Replaces @google/generative-ai (legacy SDK) with @google/genai (current SDK).
-// - Bumps express 4 → 5 (auto-catches async route rejections).
-// - Adds ajv + ajv-formats for strict request validation against the JSON
-//   Schemas generated from Pydantic models in test_ui/contracts/.
-// - Sends FULL structured data to Gemini (HTML/CSS/JS changes), not just counts.
-//   Bounded by per-category and per-snippet caps; magic-byte image validation.
-// - Returns typed AIAnalysisError on every failure path. No more synthetic
-//   {overall_severity:"ERROR", confidence_score:1.0} success-shaped responses.
+// Talks to OpenRouter using the OpenAI-compatible chat completions API.
+// Default model: qwen/qwen3.6-plus (text+image+video input, 1M context,
+// $0.325/M in / $1.95/M out — cheaper than typical hosted-provider paid
+// tiers with no per-day RPD throttle). Audited against report
+// 01KR1QKTTJQZJ1FJYECQ1M2W6Q where 18/20 sites errored on the prior
+// provider's free-tier `RESOURCE_EXHAUSTED` quota.
 //
-// What's intentionally still inline (will move in A.1.5):
-// - The system prompt body. A.1.5 reads it from PROMPTS_DIR/system.txt.
-//   The hash mechanism stays the same; A.1.5 just swaps the source.
+// The OpenAI Node SDK is a drop-in client for any OpenAI-compatible
+// endpoint - `baseURL` + `apiKey` is all that needs to change to swap
+// providers. Image inputs use the standard `image_url` content-part
+// shape (data URI), which OpenRouter forwards to the upstream model.
+//
+// Other infrastructure (kept from the prior provider iteration):
+// - express 5 (auto-catches async route rejections)
+// - ajv + ajv-formats for strict request/response validation against the
+//   JSON Schemas generated from Pydantic models in test_ui/contracts/
+// - Bounded payload (per-category caps + per-snippet caps) so a pathological
+//   page can't blow the request size
+// - Magic-byte image validation
+// - Typed AIAnalysisError on every failure path (no synthetic
+//   ERROR-as-success responses)
 
 const express = require('express');
 const path = require('path');
@@ -20,7 +28,7 @@ const fs = require('fs');
 const crypto = require('crypto');
 const Ajv = require('ajv').default;
 const addFormats = require('ajv-formats').default;
-const { GoogleGenAI } = require('@google/genai');
+const OpenAI = require('openai');
 
 // =============================================================================
 // Constants
@@ -30,8 +38,13 @@ const { GoogleGenAI } = require('@google/genai');
 const SCHEMAS_DIR = process.env.SCHEMAS_DIR || path.resolve(__dirname, '../schemas');
 const PROMPTS_DIR = process.env.PROMPTS_DIR || path.resolve(__dirname, 'prompts');
 
-// Model selection. Default matches .env.example.
-const DEFAULT_MODEL = process.env.GEMINI_MODEL || 'gemini-2.5-pro';
+// Provider config. baseURL is hardcoded to OpenRouter; if a future migration
+// targets a different OpenAI-compatible endpoint, override `AFR_AI_BASE_URL`.
+const DEFAULT_BASE_URL = process.env.AFR_AI_BASE_URL || 'https://openrouter.ai/api/v1';
+// Model selection. Qwen 3.6 Plus has confirmed text+image+video input on
+// OpenRouter (verified via the models JSON API) and is the cheapest
+// vision-capable choice in the audit. Override via AFR_AI_MODEL.
+const DEFAULT_MODEL = process.env.AFR_AI_MODEL || 'qwen/qwen3.6-plus';
 
 // Bounded payload defaults. These are conservative caps so we never blow up
 // even on a pathological page; tighten later if real-data measurement (Phase
@@ -119,8 +132,16 @@ function loadSystemPrompt() {
 
 // Inspect a base64 image: validate magic bytes, validate decoded size, return
 // the detected mimeType. Returns { mimeType } on success, { error } on failure.
-// Caller passes the detected mimeType to Gemini so JPEG bytes aren't sent with
+// Caller passes the detected mimeType so JPEG bytes aren't sent with
 // 'image/png' (and vice versa).
+//
+// Accepted formats: PNG, JPEG, WebP. WebP is in the accepted list because
+// the crawler's `compress_base64_screenshot` (test_ui/common/images.py)
+// prefers WebP encoding for size/quality and writes the bytes to a path
+// ending in `.png` - the file extension is a misnomer, the actual bytes
+// are RIFF/WebP. The OpenAI image_url content-part accepts data URIs with
+// `image/webp` natively, so we trust the magic bytes and forward the
+// right mimeType.
 function inspectImageBase64(b64) {
   if (!b64 || typeof b64 !== 'string') return { error: 'image is not a string' };
   let decoded;
@@ -133,15 +154,24 @@ function inspectImageBase64(b64) {
   if (decoded.length > MAX_IMAGE_DECODED_BYTES) {
     return { error: `image exceeds ${MAX_IMAGE_DECODED_BYTES} byte cap (${decoded.length} bytes)` };
   }
-  // PNG: 89 50 4E 47    JPEG: FF D8 FF
+  // PNG:  89 50 4E 47                                  ('\x89PNG')
+  // JPEG: FF D8 FF                                     (SOI marker)
+  // WebP: 52 49 46 46 ?? ?? ?? ?? 57 45 42 50          ('RIFF' .... 'WEBP')
+  //       (RIFF container: bytes 0-3 = 'RIFF', 4-7 = file size LE, 8-11 = 'WEBP')
   const isPng = decoded.length >= 4
     && decoded[0] === 0x89 && decoded[1] === 0x50
     && decoded[2] === 0x4E && decoded[3] === 0x47;
   const isJpeg = decoded.length >= 3
     && decoded[0] === 0xFF && decoded[1] === 0xD8 && decoded[2] === 0xFF;
+  const isWebp = decoded.length >= 12
+    && decoded[0] === 0x52 && decoded[1] === 0x49
+    && decoded[2] === 0x46 && decoded[3] === 0x46
+    && decoded[8] === 0x57 && decoded[9] === 0x45
+    && decoded[10] === 0x42 && decoded[11] === 0x50;
   if (isPng) return { mimeType: 'image/png' };
   if (isJpeg) return { mimeType: 'image/jpeg' };
-  return { error: 'image is not a valid PNG or JPEG (magic bytes mismatch)' };
+  if (isWebp) return { mimeType: 'image/webp' };
+  return { error: 'image is not a valid PNG, JPEG, or WebP (magic bytes mismatch)' };
 }
 
 // Truncate a code_snippet on a single change record if present.
@@ -282,17 +312,17 @@ app.get('/health', (req, res) => {
 
 // POST /api/compare - the main analysis endpoint.
 app.post('/api/compare', async (req, res) => {
-  const apiKey = process.env.GEMINI_API_KEY;
+  const apiKey = process.env.OPENROUTER_API_KEY;
   const requestIdFromBody = req.body && typeof req.body === 'object' ? req.body.request_id ?? null : null;
 
   // 1. API key gate.
   if (!apiKey) {
-    console.error('GEMINI_API_KEY not set');
+    console.error('OPENROUTER_API_KEY not set');
     const { body, status } = buildErrorResponse({
       request_id: requestIdFromBody,
       error_type: 'config_error',
       retryable: false,
-      details: 'GEMINI_API_KEY environment variable is not set on the AI analyzer service',
+      details: 'OPENROUTER_API_KEY environment variable is not set on the AI analyzer service',
       status: 500,
     });
     return res.status(status).json(body);
@@ -317,7 +347,8 @@ app.post('/api/compare', async (req, res) => {
 
   // 3. Image validation. Only inspects images that were actually provided;
   // absent screenshots are fine (the contract allows all-None). Stash the
-  // detected mimeType per image so we send the right Content-Type to Gemini.
+  // detected mimeType per image so we send the right Content-Type to the
+  // OpenAI-compatible endpoint.
   const validatedImages = [];  // [{ which, b64, mimeType }, ...]
   for (const [which, b64] of Object.entries(screenshots)) {
     if (b64 == null) continue;
@@ -339,33 +370,42 @@ app.post('/api/compare', async (req, res) => {
   const { bounded, truncationReport } = prioritizeStructuredData(structured_data);
   const userPrompt = buildUserPrompt(url, bounded, truncationReport);
 
-  // 5. Build content array for Gemini: image parts first (using detected
-  // mimeType so JPEG isn't sent as PNG), then the combined prompt.
-  const contents = validatedImages.map(({ b64, mimeType }) => ({
-    inlineData: { data: b64, mimeType },
+  // 5. Build OpenAI-compatible chat messages. The user message carries the
+  // image_url content parts (data-URI'd base64) followed by the text
+  // prompt. Vision-capable models pick up the images from these parts;
+  // text-only models silently ignore them. The system role keeps the
+  // task framing (severity rubric, JSON shape) separate from per-page
+  // payload, which keeps the prompt cache warmer across calls.
+  const userContent = validatedImages.map(({ b64, mimeType }) => ({
+    type: 'image_url',
+    image_url: { url: `data:${mimeType};base64,${b64}` },
   }));
-  contents.push(`${SYSTEM_PROMPT}\n\n---\n\n${userPrompt}`);
+  userContent.push({ type: 'text', text: userPrompt });
+  const messages = [
+    { role: 'system', content: SYSTEM_PROMPT },
+    { role: 'user', content: userContent },
+  ];
 
-  // 6. Call Gemini.
+  // 6. Call the provider via the OpenAI-compatible chat completions API.
   let rawText;
   try {
-    const ai = new GoogleGenAI({ apiKey });
-    const response = await ai.models.generateContent({
+    const ai = new OpenAI({ apiKey, baseURL: DEFAULT_BASE_URL });
+    const response = await ai.chat.completions.create({
       model: DEFAULT_MODEL,
-      contents,
+      messages,
     });
-    rawText = response.text;
+    rawText = response.choices?.[0]?.message?.content ?? '';
   } catch (err) {
-    console.error(`Gemini call failed for request_id=${request_id}:`, err.message);
+    console.error(`AI call failed for request_id=${request_id}:`, err.message);
     // Heuristic mapping. Most provider errors should be retried (transient).
     // 4xx-shaped errors from the SDK typically indicate auth or quota.
-    const isRateLimit = /429|rate[- ]?limit/i.test(err.message);
+    const isRateLimit = err.status === 429 || /429|rate[- ]?limit/i.test(err.message);
     const { body, status } = buildErrorResponse({
       request_id,
       model: DEFAULT_MODEL,
       error_type: isRateLimit ? 'rate_limited' : 'provider_error',
       retryable: true,
-      details: `Gemini provider error: ${err.message}`,
+      details: `AI provider error: ${err.message}`,
       status: 502,
     });
     return res.status(status).json(body);
@@ -376,7 +416,7 @@ app.post('/api/compare', async (req, res) => {
   try {
     modelOutput = extractAnalysisJson(rawText);
   } catch (err) {
-    console.error(`Failed to parse Gemini response for request_id=${request_id}:`, err.message);
+    console.error(`Failed to parse AI response for request_id=${request_id}:`, err.message);
     const { body, status } = buildErrorResponse({
       request_id,
       model: DEFAULT_MODEL,
@@ -425,6 +465,7 @@ app.use((err, req, res, _next) => {
 
 app.listen(PORT, () => {
   console.log(`AI analyzer service listening on port ${PORT}`);
+  console.log(`  base_url:       ${DEFAULT_BASE_URL}`);
   console.log(`  model:          ${DEFAULT_MODEL}`);
   console.log(`  prompt_sha256:  ${PROMPT_SHA256}`);
   console.log(`  schemas_sha256: ${SCHEMAS_SHA256}`);
