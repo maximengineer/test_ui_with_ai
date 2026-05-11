@@ -29,7 +29,11 @@ env:
   # Latest LTS at time of A.4. Bumped from the plan's "Node 20" — matches
   # ai_analyzer/Dockerfile + package.json's "engines": { "node": ">=24.0.0" }.
   NODE_VERSION: '24'
-  POETRY_VERSION: '1.8.3'
+  # Poetry 2.x reads PEP 621 `[project]` (the post-cleanup pyproject layout).
+  # 1.8.3 errored with "fields ['authors', 'description', 'name', 'version']
+  # are required in package mode" because it only knows about the legacy
+  # `[tool.poetry]` keys.
+  POETRY_VERSION: '2.1.4'
 
 jobs:
   # -------------------------------------------------------------------------

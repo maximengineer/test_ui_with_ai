@@ -1,4 +1,4 @@
-.PHONY: baseline current compare report report-date clean-baseline clean-current clean-reports clean-comparator clean-all test test-local-baseline test-local-current test-local-comparator test-local-report test-local-report-date test-local-report-with-ai test-ai-analyzer test-full test-local-full test-existing-data audit dashboard-dev dashboard-dev-backend dashboard-docker dashboard-build dashboard-logs dashboard-down help
+.PHONY: baseline current compare report report-date clean-baseline clean-current clean-reports clean-comparator clean-all clean-orphans test test-local-baseline test-local-current test-local-comparator test-local-report test-local-report-date test-local-report-with-ai test-ai-analyzer test-full test-local-full test-existing-data audit dashboard-dev dashboard-dev-backend dashboard-docker dashboard-build dashboard-logs dashboard-down tamper-baseline help
 
 # === Individual Step Commands ===
 
@@ -158,6 +158,35 @@ dashboard-logs:
 dashboard-down:
 	docker compose stop dashboard ai-analyzer
 
+# Inject 19 deterministic synthetic mutations into the latest baseline
+# run, so the comparator + report pipeline can be validated end-to-end
+# against external sites you don't control (e.g. gov.ie URLs that don't
+# change between runs). See `scripts/tamper_baseline.py` docstring for
+# the full per-pattern audit table + workflow.
+#
+# Pipes the script through `docker exec -i python -` because the baseline
+# dirs are owned by `root` (the dashboard's subprocess writes them as
+# root inside the container). Requires `make dashboard-docker` to have
+# the dashboard container running.
+#
+# After running, in the dashboard at /runs:
+#   1. Check today's session
+#   2. Click the (now-slate) Run current button to spawn current
+#   3. Repeat for comparator, then report
+# Then audit /reports against the manifest the script printed.
+tamper-baseline:
+	@cat scripts/tamper_baseline.py \
+	  | docker exec -i test_ui_with_ai-dashboard-1 python -
+
+# Reap orphan artifacts that survived deletion (e.g. `.run.json` files
+# whose runs were sync'd from manifests then deleted, empty date dirs
+# from before the prune-empty-date-dir cleanup landed). User-invisible
+# (the dashboard's read paths already filter both classes), but they
+# burn disk + slow `ls`. Pass AFR_CLEANUP_DRY_RUN=1 to scan first.
+clean-orphans:
+	@cat scripts/cleanup_orphans.py \
+	  | docker exec -i test_ui_with_ai-dashboard-1 python -
+
 # Help command showing all available Make targets
 help:
 	@echo "=== AI-Powered UI Regression Testing Makefile ==="
@@ -202,6 +231,8 @@ help:
 	@echo "  dashboard-build        - Rebuild the dashboard image"
 	@echo "  dashboard-logs         - Tail the dashboard container logs"
 	@echo "  dashboard-down         - Stop dashboard + ai-analyzer containers"
+	@echo "  tamper-baseline        - Inject synthetic changes for end-to-end pipeline validation"
+	@echo "  clean-orphans          - Reap orphan .run.json files + empty date dirs"
 	@echo ""
 	@echo "📦 ENV VARS (see .env.example for full list):"
 	@echo "  AFR_AI_ENABLED=false   - Skip AI calls; write ai_disabled.json markers"
