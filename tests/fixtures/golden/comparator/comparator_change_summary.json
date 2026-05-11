@@ -2,11 +2,16 @@
   "affected_components": [
     "content",
     "structure",
+    "title_and_metadata",
     "visual_layout"
   ],
-  "ai_analysis_priority": "medium",
+  "ai_analysis_priority": "high",
   "change_categories": {
     "content": {
+      "attribute_changes": 0,
+      "dynamic_attribute_changes": 0,
+      "heading_changes": 0,
+      "meta_changes": 1,
       "structure_changed": true,
       "text_content_changed": false,
       "title_changed": true
@@ -24,10 +29,10 @@
     }
   },
   "overall_assessment": {
-    "change_severity": "medium",
+    "change_severity": "high",
     "changes_detected": true,
     "requires_review": true,
-    "user_impact": "medium"
+    "user_impact": "high"
   },
-  "recommendation": "Review visual changes in layout"
+  "recommendation": "Review visual changes in layout; Verify page title (SEO + browser-tab impact); Verify meta-tag changes (SEO + indexing impact); Review structural element add/remove changes"
 }
