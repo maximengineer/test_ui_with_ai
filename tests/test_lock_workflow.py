@@ -117,7 +117,7 @@ async def test_compare_with_baseline_refuses_when_no_baseline(tmp_path, monkeypa
     monkeypatch.setattr(settings, "comparator_dir", tmp_path / "comparator")
 
     async with httpx.AsyncClient() as client:
-        orch = Orchestrator(client=client, gemini_url="http://test.local")
+        orch = Orchestrator(client=client, ai_analyzer_url="http://test.local")
         with pytest.raises(PreconditionFailed, match="No complete baseline run"):
             await orch.compare_with_baseline(
                 baseline_dir=tmp_path / "missing-baseline",
@@ -156,7 +156,7 @@ async def test_compare_with_baseline_refuses_when_baseline_exists_but_no_current
     monkeypatch.setattr(settings, "comparator_dir", tmp_path / "comparator")
 
     async with httpx.AsyncClient() as client:
-        orch = Orchestrator(client=client, gemini_url="http://test.local")
+        orch = Orchestrator(client=client, ai_analyzer_url="http://test.local")
         with pytest.raises(PreconditionFailed, match="No complete current run"):
             await orch.compare_with_baseline(
                 baseline_dir=baseline_root,
@@ -200,7 +200,7 @@ async def test_generate_enhanced_report_refuses_when_comparator_failed(
     monkeypatch.setattr(settings, "comparator_dir", comparator_root)
 
     async with httpx.AsyncClient() as client:
-        orch = Orchestrator(client=client, gemini_url="http://test.local")
+        orch = Orchestrator(client=client, ai_analyzer_url="http://test.local")
         with pytest.raises(PreconditionFailed, match="status='failed'"):
             await orch.generate_enhanced_report(
                 comparator_root=comparator_root,

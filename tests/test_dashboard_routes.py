@@ -148,14 +148,18 @@ def sites_client(tmp_path, monkeypatch):
         yield c
 
 
-def test_post_sites_creates_with_slugified_id(sites_client):
+def test_post_sites_creates_with_next_numeric_id(sites_client):
+    """The fixture seeds `a` and `b` (slug-style ids retained in the
+    fixture). Adding a new site assigns the next available numeric id;
+    `next_numeric_id` returns "1" because the fixture's slug ids don't
+    collide with the integer namespace."""
     r = sites_client.post(
         "/api/sites", json={"name": "My New Site", "url": "https://new.example"}
     )
     assert r.status_code == 201
     body = r.json()
     assert body == {
-        "id": "my-new-site",
+        "id": "1",
         "name": "My New Site",
         "url": "https://new.example",
     }
@@ -164,11 +168,16 @@ def test_post_sites_creates_with_slugified_id(sites_client):
     assert len(listing) == 3
 
 
-def test_post_sites_dedupes_id_against_existing_slug(sites_client):
-    """Posting "A" (which slugifies to "a", colliding) MUST get "a-2"."""
-    r = sites_client.post("/api/sites", json={"name": "A", "url": "https://a2.example"})
-    assert r.status_code == 201
-    assert r.json()["id"] == "a-2"
+def test_post_sites_assigns_smallest_unused_numeric_id(sites_client):
+    """Two posts in a row → ids 1 and 2 (sequential, no gap)."""
+    r1 = sites_client.post(
+        "/api/sites", json={"name": "First", "url": "https://1.example"}
+    )
+    r2 = sites_client.post(
+        "/api/sites", json={"name": "Second", "url": "https://2.example"}
+    )
+    assert r1.json()["id"] == "1"
+    assert r2.json()["id"] == "2"
 
 
 def test_post_sites_422_for_empty_url(sites_client):
@@ -180,6 +189,42 @@ def test_post_sites_422_for_empty_url(sites_client):
 def test_post_sites_422_for_missing_name(sites_client):
     r = sites_client.post("/api/sites", json={"url": "https://x.example"})
     assert r.status_code == 422
+
+
+def test_post_sites_bulk_creates_with_sequential_ids(sites_client):
+    """POST /api/sites/bulk with 3 URLs → 3 sites with sequential ids."""
+    r = sites_client.post(
+        "/api/sites/bulk",
+        json={"urls": ["https://a.example", "https://b.example", "https://c.example"]},
+    )
+    assert r.status_code == 201
+    body = r.json()
+    assert len(body) == 3
+    assert [s["id"] for s in body] == ["1", "2", "3"]
+    assert all(s["name"] == s["url"] for s in body), (
+        "name should default to the URL itself"
+    )
+
+
+def test_post_sites_bulk_422_for_empty_urls(sites_client):
+    """min_length=1 on the urls list → 422 when client sends []."""
+    r = sites_client.post("/api/sites/bulk", json={"urls": []})
+    assert r.status_code == 422
+
+
+def test_post_sites_bulk_422_for_invalid_url_aborts_batch(sites_client):
+    """One bad URL aborts the whole batch (all-or-nothing).
+
+    Pre-batch: 2 sites in the fixture. Post: still 2 (no partial write).
+    """
+    before = sites_client.get("/api/sites").json()
+    r = sites_client.post(
+        "/api/sites/bulk",
+        json={"urls": ["https://good.example", "", "https://also-good.example"]},
+    )
+    assert r.status_code == 422
+    after = sites_client.get("/api/sites").json()
+    assert len(after) == len(before)
 
 
 def test_post_sites_422_for_extra_field(sites_client):
@@ -226,6 +271,43 @@ def test_delete_site_404_for_unknown(sites_client):
     assert r.status_code == 404
 
 
+def test_post_sites_bulk_delete_returns_per_id_outcomes(sites_client):
+    """Mixed batch of present + absent ids → both get reported, present
+    ids actually leave sites.yml. Mirrors runs/bulk-delete semantics."""
+    r = sites_client.post(
+        "/api/sites/bulk-delete",
+        json={"ids": ["a", "b", "ghost"]},
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert sorted(body["deleted"]) == ["a", "b"]
+    assert body["skipped_not_found"] == ["ghost"]
+    listing = sites_client.get("/api/sites").json()
+    assert listing == []
+
+
+def test_post_sites_bulk_delete_422_for_empty_list(sites_client):
+    """min_length=1 forbids `{"ids": []}` so a no-op call surfaces as
+    422 not 200 - matches SiteBulkCreateIn / RunBulkDeleteIn behavior."""
+    r = sites_client.post("/api/sites/bulk-delete", json={"ids": []})
+    assert r.status_code == 422
+
+
+def test_post_sites_bulk_delete_idempotent_on_resubmit(sites_client):
+    """Re-deleting the same ids returns deleted=[], skipped=both - the
+    first call removes them, the second sees them absent. The yaml file
+    isn't rewritten on the second call (deleted=[] short-circuits the
+    write) but the API contract still reports cleanly."""
+    first = sites_client.post("/api/sites/bulk-delete", json={"ids": ["a", "b"]})
+    assert first.status_code == 200
+    assert sorted(first.json()["deleted"]) == ["a", "b"]
+
+    second = sites_client.post("/api/sites/bulk-delete", json={"ids": ["a", "b"]})
+    assert second.status_code == 200
+    assert second.json()["deleted"] == []
+    assert sorted(second.json()["skipped_not_found"]) == ["a", "b"]
+
+
 def test_get_sites_returns_empty_when_file_missing(tmp_path, monkeypatch):
     """Round-3 #H1 fix: a missing sites.yml at request time MUST yield
     `[]`, not a 500. Pre-fix the import-time check would have killed the
@@ -260,6 +342,81 @@ def test_dates_lists_present_dirs_newest_first(client):
     assert body["baseline"] == ["15-03-2099", "01-01-2099"]
     assert body["current"] == ["10-02-2099"]
     assert body["comparator"] == []
+
+
+def test_dates_skips_date_dir_with_only_dangling_latest_symlink(client):
+    """After deleting the last run for a date, the date dir is left
+    behind containing only a (now-dangling) `latest` symlink. The
+    operator's screenshot bug: the Reports page kept showing the date
+    plaque because `_list_date_dirs` enumerated any subdirectory.
+
+    A date dir with no real published-run subdir must NOT show up.
+    """
+    # Real published date with a run - should appear.
+    _seed_run(settings.baseline_dir, "15-03-2099", new_run_id())
+    # "Ghost" date with only a dangling `latest` symlink, mimicking the
+    # post-delete on-disk state. The symlink target doesn't have to
+    # exist (this models the "after rmtree" condition exactly).
+    ghost = settings.baseline_dir / "01-01-2099"
+    ghost.mkdir(parents=True)
+    (ghost / "latest").symlink_to("01KQTAQSK6BSW7KDADMV4NFFWJ")
+
+    r = client.get("/api/dates")
+    body = r.json()
+    assert body["baseline"] == ["15-03-2099"], (
+        "Ghost date with only a `latest` symlink should NOT be listed."
+    )
+
+
+def test_dates_skips_completely_empty_date_dir(client):
+    """A date dir with no children at all (e.g. operator manually
+    rmtree'd the contents but left the parent) shouldn't show up either."""
+    _seed_run(settings.baseline_dir, "15-03-2099", new_run_id())
+    (settings.baseline_dir / "01-01-2099").mkdir(parents=True)
+    r = client.get("/api/dates")
+    assert r.json()["baseline"] == ["15-03-2099"]
+
+
+def test_delete_run_prunes_empty_date_dir_and_dangling_latest(client):
+    """End-to-end: deleting the LAST run for a date should leave nothing
+    behind under `data/<kind>/<date>/`. Pre-fix the date dir + `latest`
+    symlink survived and the date kept appearing in /api/dates.
+    """
+    rid = new_run_id()
+    _seed_run(settings.baseline_dir, "15-03-2099", rid)
+    # Mirror the publish layout: `latest` symlink alongside the real run.
+    (settings.baseline_dir / "15-03-2099" / "latest").symlink_to(rid)
+    # Sync so the row exists in the DB.
+    client.post("/api/sync")
+    # Find the db_id by name.
+    listing = client.get("/api/runs").json()["items"]
+    db_id = next(r["id"] for r in listing if r["run_id"] == rid)
+
+    r = client.delete(f"/api/runs/{db_id}")
+    assert r.status_code == 204
+    # Date dir gone; /api/dates therefore lists nothing.
+    assert not (settings.baseline_dir / "15-03-2099").exists()
+    body = client.get("/api/dates").json()
+    assert body["baseline"] == []
+
+
+def test_delete_run_keeps_date_dir_when_other_runs_remain(client):
+    """Deleting one of two runs in the same date dir must NOT prune the
+    parent - the surviving sibling needs to stay reachable."""
+    rid_keep = new_run_id()
+    rid_delete = new_run_id()
+    _seed_run(settings.baseline_dir, "15-03-2099", rid_keep)
+    _seed_run(settings.baseline_dir, "15-03-2099", rid_delete)
+    client.post("/api/sync")
+    listing = client.get("/api/runs").json()["items"]
+    db_id = next(r["id"] for r in listing if r["run_id"] == rid_delete)
+
+    r = client.delete(f"/api/runs/{db_id}")
+    assert r.status_code == 204
+    assert (settings.baseline_dir / "15-03-2099").exists()
+    assert (settings.baseline_dir / "15-03-2099" / rid_keep).exists()
+    body = client.get("/api/dates").json()
+    assert body["baseline"] == ["15-03-2099"]
 
 
 def test_runs_list_paginates(client):
@@ -429,8 +586,13 @@ def test_dates_filters_out_garbage_dir_names(client):
     settings.baseline_dir.mkdir(parents=True, exist_ok=True)
     (settings.baseline_dir / "not-a-date").mkdir()
     (settings.baseline_dir / "latest").mkdir()  # stray symlink-target
-    (settings.baseline_dir / "01-01-2099").mkdir()
-    (settings.baseline_dir / "15-03-2099").mkdir()
+    # Real DD-MM-YYYY dirs need an actual run subdir inside them, otherwise
+    # the post-fix `_date_dir_has_published_run` filter (added to suppress
+    # ghost dates after run-deletion) would drop them too. We're testing
+    # the NAME filter here, so put a real run in each to isolate the
+    # behavior under test.
+    _seed_run(settings.baseline_dir, "01-01-2099", new_run_id())
+    _seed_run(settings.baseline_dir, "15-03-2099", new_run_id())
 
     r = client.get("/api/dates")
     assert r.status_code == 200
@@ -445,12 +607,17 @@ def test_dates_rejects_impossible_calendar_dates(client):
     so impossible dates are filtered out alongside garbage names."""
     settings.baseline_dir.mkdir(parents=True, exist_ok=True)
     # All shape-valid (2 digits, 2 digits, 4 digits) but not real calendar
-    # dates. Must NOT appear in the response.
+    # dates. Must NOT appear in the response. Empty-dir mkdir() is fine
+    # for the impossible names because they get filtered on the name-rule
+    # before the published-run check runs.
     (settings.baseline_dir / "32-01-2099").mkdir()  # day 32
     (settings.baseline_dir / "01-13-2099").mkdir()  # month 13
     (settings.baseline_dir / "00-00-0000").mkdir()  # day 0, month 0
     (settings.baseline_dir / "29-02-2099").mkdir()  # not a leap year
-    (settings.baseline_dir / "01-01-2099").mkdir()  # the only real date
+    # The one real date needs a real run inside or the published-run
+    # filter (added to suppress ghost dates after run-deletion) would
+    # drop it too.
+    _seed_run(settings.baseline_dir, "01-01-2099", new_run_id())
 
     r = client.get("/api/dates")
     assert r.status_code == 200

@@ -89,7 +89,7 @@ def test_analysis_output_discriminator_routes_correctly():
         {
             "result_type": "analysis_success",
             "request_id": str(uuid.uuid4()),
-            "model": "gemini-2.5-pro",
+            "model": "qwen/qwen3.6-plus",
             "prompt_sha256": "a" * 64,
             "overall_severity": "CRITICAL",
             "business_impact": "HIGH",
@@ -142,7 +142,7 @@ def test_confidence_score_bounded():
     base = {
         "result_type": "analysis_success",
         "request_id": str(uuid.uuid4()),
-        "model": "gemini-2.5-pro",
+        "model": "qwen/qwen3.6-plus",
         "prompt_sha256": "a" * 64,
         "overall_severity": "SAFE",
         "business_impact": "NONE",

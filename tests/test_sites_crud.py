@@ -14,8 +14,10 @@ from pydantic import ValidationError
 from test_ui.common.sites import (
     SiteNotFound,
     add_site,
+    bulk_add_sites,
     delete_site,
     load_sites,
+    next_numeric_id,
     update_site,
 )
 
@@ -32,28 +34,37 @@ def _seed(tmp_path: Path, content: str) -> Path:
 # --------------------------------------------------------------------------- #
 
 
-def test_add_site_appends_with_slugified_id(tmp_path):
+def test_add_site_appends_with_next_numeric_id(tmp_path):
+    """New sites get the smallest unused positive integer as id (1, 2, 3, ...).
+
+    Migrated from the pre-fix `slugified_id` contract; per operator
+    preference, ids are now sequential numbers, not slugified names."""
     p = _seed(
         tmp_path,
-        "sites:\n  - id: existing\n    name: Existing\n    url: https://e.example\n",
+        "sites:\n  - id: '1'\n    name: Existing\n    url: https://e.example\n",
     )
     new_site = add_site(p, name="My New Site", url="https://new.example")
-    assert new_site.id == "my-new-site"
+    assert new_site.id == "2"
     sites = load_sites(p)
     assert len(sites) == 2
-    assert sites[1].id == "my-new-site"
+    assert sites[1].id == "2"
     assert sites[1].name == "My New Site"
     assert sites[1].url == "https://new.example"
 
 
-def test_add_site_dedupes_id_against_existing(tmp_path):
-    """Adding a site whose slugified name collides MUST get -2 suffix."""
+def test_add_site_fills_smallest_gap(tmp_path):
+    """If existing ids are {1, 3, 5}, next add gets 2 (smallest unused),
+    not 6. Matches the `next_numeric_id` contract - prevents gaps from
+    becoming permanent after deletes."""
     p = _seed(
         tmp_path,
-        "sites:\n  - id: my-site\n    name: My Site\n    url: https://a.example\n",
+        "sites:\n"
+        "  - id: '1'\n    name: A\n    url: https://a.example\n"
+        "  - id: '3'\n    name: C\n    url: https://c.example\n"
+        "  - id: '5'\n    name: E\n    url: https://e.example\n",
     )
-    new = add_site(p, name="My Site", url="https://b.example")
-    assert new.id == "my-site-2"
+    new = add_site(p, name="B", url="https://b.example")
+    assert new.id == "2"
 
 
 def test_add_site_preserves_comments(tmp_path):
@@ -71,10 +82,10 @@ def test_add_site_preserves_comments(tmp_path):
 
 def test_add_site_handles_empty_file(tmp_path):
     """A file with no `sites:` key (or `sites:` empty) must still accept
-    adds - the loader synthesizes the list."""
+    adds - the loader synthesizes the list. First add gets id=1."""
     p = _seed(tmp_path, "")
     new = add_site(p, name="First", url="https://first.example")
-    assert new.id == "first"
+    assert new.id == "1"
     sites = load_sites(p)
     assert len(sites) == 1
 
@@ -246,6 +257,82 @@ def test_delete_site_404_when_id_unknown(tmp_path):
     p = _seed(tmp_path, "sites:\n  - id: a\n    name: A\n    url: https://a.example\n")
     with pytest.raises(SiteNotFound):
         delete_site(p, "missing")
+
+
+# --------------------------------------------------------------------------- #
+# next_numeric_id                                                             #
+# --------------------------------------------------------------------------- #
+
+
+def test_next_numeric_id_starts_at_1():
+    assert next_numeric_id(set()) == "1"
+
+
+def test_next_numeric_id_skips_taken():
+    assert next_numeric_id({"1", "2"}) == "3"
+
+
+def test_next_numeric_id_fills_smallest_gap():
+    """{1, 3, 5} → 2 (not 6) — gaps from deletes don't become permanent."""
+    assert next_numeric_id({"1", "3", "5"}) == "2"
+
+
+def test_next_numeric_id_ignores_non_numeric_taken():
+    """Slug-style ids (legacy) don't block the integer namespace."""
+    assert next_numeric_id({"home-page", "news"}) == "1"
+
+
+# --------------------------------------------------------------------------- #
+# bulk_add_sites                                                              #
+# --------------------------------------------------------------------------- #
+
+
+def test_bulk_add_sites_assigns_sequential_ids(tmp_path):
+    p = _seed(tmp_path, "sites: []\n")
+    sites = bulk_add_sites(
+        p, ["https://a.example", "https://b.example", "https://c.example"]
+    )
+    assert [s.id for s in sites] == ["1", "2", "3"]
+    assert [s.name for s in sites] == [
+        "https://a.example",
+        "https://b.example",
+        "https://c.example",
+    ]
+    # Persisted to disk.
+    on_disk = load_sites(p)
+    assert len(on_disk) == 3
+
+
+def test_bulk_add_sites_extends_existing_numeric_sequence(tmp_path):
+    """A 2-URL batch on a 3-site file produces ids 4 and 5."""
+    p = _seed(
+        tmp_path,
+        "sites:\n"
+        "  - id: '1'\n    name: A\n    url: https://a.example\n"
+        "  - id: '2'\n    name: B\n    url: https://b.example\n"
+        "  - id: '3'\n    name: C\n    url: https://c.example\n",
+    )
+    sites = bulk_add_sites(p, ["https://d.example", "https://e.example"])
+    assert [s.id for s in sites] == ["4", "5"]
+
+
+def test_bulk_add_sites_empty_list_is_noop(tmp_path):
+    p = _seed(tmp_path, "sites: []\n")
+    original = p.read_text(encoding="utf-8")
+    sites = bulk_add_sites(p, [])
+    assert sites == []
+    # File untouched.
+    assert p.read_text(encoding="utf-8") == original
+
+
+def test_bulk_add_sites_aborts_whole_batch_on_invalid_url(tmp_path):
+    """All-or-nothing: one bad URL → ValidationError → file unchanged."""
+    p = _seed(tmp_path, "sites: []\n")
+    original = p.read_text(encoding="utf-8")
+    with pytest.raises(ValidationError):
+        bulk_add_sites(p, ["https://good.example", "", "https://also-good.example"])
+    # Nothing landed.
+    assert p.read_text(encoding="utf-8") == original
 
 
 def test_delete_site_preserves_comments(tmp_path):

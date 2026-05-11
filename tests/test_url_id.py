@@ -9,7 +9,7 @@ future change is loud.
 Several cases are documented as **latent bugs** - surprising or
 filesystem-hostile output that the pre-A.3 code already produced. Tests pin
 the current value so we don't accidentally "fix" them and break goldens
-without realizing. They're tracked as flags in REFACTOR_AND_DASHBOARD_PLAN.md
+without realizing. They're tracked under "Known latent bugs" in BACKLOG.md
 for a future cleanup pass.
 """
 

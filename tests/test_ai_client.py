@@ -30,7 +30,7 @@ from test_ui.report.ai_client import AIClient
 # Fixtures + helpers
 # ---------------------------------------------------------------------------
 
-GEMINI_URL = "http://test.local"
+AI_ANALYZER_URL = "http://test.local"
 
 
 @pytest.fixture
@@ -64,7 +64,7 @@ def _success_body(request_id: str = "req-123") -> dict:
         "schema_version": SCHEMA_VERSION,
         "result_type": "analysis_success",
         "request_id": request_id,
-        "model": "gemini-2.5-pro",
+        "model": "qwen/qwen3.6-plus",
         "prompt_sha256": "a" * 64,
         "overall_severity": "WARNING",
         "business_impact": "MEDIUM",
@@ -90,7 +90,7 @@ def _error_body(
         "schema_version": SCHEMA_VERSION,
         "result_type": "analysis_error",
         "request_id": request_id,
-        "model": "gemini-2.5-pro",
+        "model": "qwen/qwen3.6-plus",
         "prompt_sha256": "b" * 64,
         "error_type": error_type,
         "retryable": retryable,
@@ -206,10 +206,10 @@ def test_create_request_drops_loader_only_keys():
 
 async def test_send_returns_typed_success_dict_on_200(client):
     """200 + valid AIAnalysisResponse body → returned as a dict, no retry."""
-    ai_client = AIClient(client=client, gemini_url=GEMINI_URL)
+    ai_client = AIClient(client=client, ai_analyzer_url=AI_ANALYZER_URL)
     req = _ai_request()
 
-    with respx.mock(base_url=GEMINI_URL) as mock:
+    with respx.mock(base_url=AI_ANALYZER_URL) as mock:
         route = mock.post("/api/compare").mock(
             return_value=httpx.Response(200, json=_success_body(req["request_id"]))
         )
@@ -228,7 +228,7 @@ async def test_send_returns_typed_success_dict_on_200(client):
 
 async def test_send_retries_on_retryable_error_then_succeeds(client, captured_sleeps):
     """First call returns retryable error → second call succeeds. Backoff used."""
-    ai_client = AIClient(client=client, gemini_url=GEMINI_URL)
+    ai_client = AIClient(client=client, ai_analyzer_url=AI_ANALYZER_URL)
     req = _ai_request()
 
     responses = [
@@ -242,7 +242,7 @@ async def test_send_retries_on_retryable_error_then_succeeds(client, captured_sl
         ),
         httpx.Response(200, json=_success_body(req["request_id"])),
     ]
-    with respx.mock(base_url=GEMINI_URL) as mock:
+    with respx.mock(base_url=AI_ANALYZER_URL) as mock:
         route = mock.post("/api/compare").mock(side_effect=responses)
         result = await ai_client.send(req)
 
@@ -254,7 +254,7 @@ async def test_send_retries_on_retryable_error_then_succeeds(client, captured_sl
 
 async def test_send_honors_retry_after_header(client, captured_sleeps):
     """Server returns retryable 429 with Retry-After: 7 → next sleep is 7s, not exp-backoff."""
-    ai_client = AIClient(client=client, gemini_url=GEMINI_URL)
+    ai_client = AIClient(client=client, ai_analyzer_url=AI_ANALYZER_URL)
     req = _ai_request()
 
     responses = [
@@ -267,7 +267,7 @@ async def test_send_honors_retry_after_header(client, captured_sleeps):
         ),
         httpx.Response(200, json=_success_body(req["request_id"])),
     ]
-    with respx.mock(base_url=GEMINI_URL) as mock:
+    with respx.mock(base_url=AI_ANALYZER_URL) as mock:
         mock.post("/api/compare").mock(side_effect=responses)
         result = await ai_client.send(req)
 
@@ -281,7 +281,7 @@ async def test_send_falls_back_to_exp_backoff_when_retry_after_unparseable(
     client, captured_sleeps
 ):
     """Retry-After: HTTP-date form → we don't parse it → exp-backoff used instead."""
-    ai_client = AIClient(client=client, gemini_url=GEMINI_URL)
+    ai_client = AIClient(client=client, ai_analyzer_url=AI_ANALYZER_URL)
     req = _ai_request()
 
     responses = [
@@ -294,7 +294,7 @@ async def test_send_falls_back_to_exp_backoff_when_retry_after_unparseable(
         ),
         httpx.Response(200, json=_success_body(req["request_id"])),
     ]
-    with respx.mock(base_url=GEMINI_URL) as mock:
+    with respx.mock(base_url=AI_ANALYZER_URL) as mock:
         mock.post("/api/compare").mock(side_effect=responses)
         await ai_client.send(req)
 
@@ -303,10 +303,10 @@ async def test_send_falls_back_to_exp_backoff_when_retry_after_unparseable(
 
 async def test_send_returns_immediately_on_non_retryable_error(client, captured_sleeps):
     """analysis_error with retryable=False → no retry, error dict returned as-is."""
-    ai_client = AIClient(client=client, gemini_url=GEMINI_URL)
+    ai_client = AIClient(client=client, ai_analyzer_url=AI_ANALYZER_URL)
     req = _ai_request()
 
-    with respx.mock(base_url=GEMINI_URL) as mock:
+    with respx.mock(base_url=AI_ANALYZER_URL) as mock:
         route = mock.post("/api/compare").mock(
             return_value=httpx.Response(
                 400,
@@ -328,13 +328,13 @@ async def test_send_returns_immediately_on_non_retryable_error(client, captured_
 
 async def test_send_exhausts_retries_then_returns_typed_error(client, captured_sleeps):
     """All retries fail with retryable error → last server error is returned."""
-    ai_client = AIClient(client=client, gemini_url=GEMINI_URL)
+    ai_client = AIClient(client=client, ai_analyzer_url=AI_ANALYZER_URL)
     req = _ai_request()
     error_payload = _error_body(
         retryable=True, error_type="provider_error", request_id=req["request_id"]
     )
 
-    with respx.mock(base_url=GEMINI_URL) as mock:
+    with respx.mock(base_url=AI_ANALYZER_URL) as mock:
         route = mock.post("/api/compare").mock(
             return_value=httpx.Response(503, json=error_payload)
         )
@@ -354,10 +354,10 @@ async def test_send_exhausts_retries_then_returns_typed_error(client, captured_s
 
 async def test_send_synthesizes_timeout_error_after_retries(client, captured_sleeps):
     """All attempts time out → AIClient synthesizes an AIAnalysisError(timeout)."""
-    ai_client = AIClient(client=client, gemini_url=GEMINI_URL)
+    ai_client = AIClient(client=client, ai_analyzer_url=AI_ANALYZER_URL)
     req = _ai_request()
 
-    with respx.mock(base_url=GEMINI_URL) as mock:
+    with respx.mock(base_url=AI_ANALYZER_URL) as mock:
         mock.post("/api/compare").mock(side_effect=httpx.TimeoutException("simulated"))
         result = await ai_client.send(req, max_retries=2)
 
@@ -372,10 +372,10 @@ async def test_send_synthesizes_provider_error_on_transport_failure(
     client, captured_sleeps
 ):
     """httpx.ConnectError exhausting retries → synthesized provider_error."""
-    ai_client = AIClient(client=client, gemini_url=GEMINI_URL)
+    ai_client = AIClient(client=client, ai_analyzer_url=AI_ANALYZER_URL)
     req = _ai_request()
 
-    with respx.mock(base_url=GEMINI_URL) as mock:
+    with respx.mock(base_url=AI_ANALYZER_URL) as mock:
         mock.post("/api/compare").mock(
             side_effect=httpx.ConnectError("connection refused")
         )
@@ -393,10 +393,10 @@ async def test_send_synthesizes_provider_error_on_transport_failure(
 
 async def test_send_returns_response_invalid_on_non_json_body(client, captured_sleeps):
     """200 with garbage body → response_invalid, not retried (server bug, not transient)."""
-    ai_client = AIClient(client=client, gemini_url=GEMINI_URL)
+    ai_client = AIClient(client=client, ai_analyzer_url=AI_ANALYZER_URL)
     req = _ai_request()
 
-    with respx.mock(base_url=GEMINI_URL) as mock:
+    with respx.mock(base_url=AI_ANALYZER_URL) as mock:
         route = mock.post("/api/compare").mock(
             return_value=httpx.Response(200, content=b"not json at all")
         )
@@ -412,10 +412,10 @@ async def test_send_returns_response_invalid_on_schema_violation(
     client, captured_sleeps
 ):
     """200 with valid JSON but missing fields → response_invalid (no retry)."""
-    ai_client = AIClient(client=client, gemini_url=GEMINI_URL)
+    ai_client = AIClient(client=client, ai_analyzer_url=AI_ANALYZER_URL)
     req = _ai_request()
 
-    with respx.mock(base_url=GEMINI_URL) as mock:
+    with respx.mock(base_url=AI_ANALYZER_URL) as mock:
         route = mock.post("/api/compare").mock(
             return_value=httpx.Response(
                 200, json={"result_type": "analysis_success", "request_id": "x"}
@@ -435,10 +435,10 @@ async def test_send_rejects_marker_result_types_on_the_wire(client, captured_sle
     Discriminator parses successfully (the union accepts them) but the send
     code path treats them as a server-side bug → response_invalid.
     """
-    ai_client = AIClient(client=client, gemini_url=GEMINI_URL)
+    ai_client = AIClient(client=client, ai_analyzer_url=AI_ANALYZER_URL)
     req = _ai_request()
 
-    with respx.mock(base_url=GEMINI_URL) as mock:
+    with respx.mock(base_url=AI_ANALYZER_URL) as mock:
         mock.post("/api/compare").mock(
             return_value=httpx.Response(
                 200,
@@ -494,7 +494,7 @@ async def test_semaphore_caps_in_flight_requests(client, captured_sleeps):
     test releases it, while tracking peak concurrency. Launches 5 sends in
     parallel, awaits release, asserts peak == 2.
     """
-    ai_client = AIClient(client=client, gemini_url=GEMINI_URL, ai_concurrency=2)
+    ai_client = AIClient(client=client, ai_analyzer_url=AI_ANALYZER_URL, ai_concurrency=2)
 
     in_flight = 0
     peak = 0
@@ -515,7 +515,7 @@ async def test_semaphore_caps_in_flight_requests(client, captured_sleeps):
         body = json.loads(request.content)
         return httpx.Response(200, json=_success_body(body["request_id"]))
 
-    with respx.mock(base_url=GEMINI_URL) as mock:
+    with respx.mock(base_url=AI_ANALYZER_URL) as mock:
         mock.post("/api/compare").mock(side_effect=_gated_handler)
 
         # Fire 5 concurrent sends with distinct request_ids.
@@ -558,5 +558,5 @@ async def test_semaphore_floor_at_one(client):
     via observable behavior - if `_value` ever changes, this assertion is
     cheap to update without losing real coverage.
     """
-    ai_client = AIClient(client=client, gemini_url=GEMINI_URL, ai_concurrency=0)
+    ai_client = AIClient(client=client, ai_analyzer_url=AI_ANALYZER_URL, ai_concurrency=0)
     assert ai_client.semaphore._value == 1

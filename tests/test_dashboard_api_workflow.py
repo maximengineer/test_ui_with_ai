@@ -150,7 +150,7 @@ def e2e_env(tmp_path, monkeypatch):
         _seed_complete_run(kind_to_root[kind], today, kind, run_id)
         if kind == "report":
             # The report drill-in routes need per-URL artifacts.
-            _seed_report_artifacts(today, run_id, url_id="example-site")
+            _seed_report_artifacts(today, run_id, url_id="1")
         with dbmod.connection_scope(db_path) as conn:
             dbmod.mark_running(
                 conn,
@@ -209,11 +209,11 @@ def test_full_operator_workflow_end_to_end(e2e_env):
         )
         assert r.status_code == 201, r.text
         site = r.json()
-        assert site["id"] == "example-site"
+        assert site["id"] == "1"
 
         # GET /api/sites should now contain it.
         listing = c.get("/api/sites").json()
-        assert any(s["id"] == "example-site" for s in listing)
+        assert any(s["id"] == "1" for s in listing)
 
         # === 2. Spawn baseline ========================================
         r = c.post("/api/runs", json={"kind": "baseline"})
@@ -269,25 +269,25 @@ def test_full_operator_workflow_end_to_end(e2e_env):
         assert r.status_code == 200, r.text
         urls = r.json()["items"]
         assert len(urls) == 1
-        assert urls[0]["url_id"] == "example-site"
+        assert urls[0]["url_id"] == "1"
         assert urls[0]["result_type"] == "analysis_success"
         assert urls[0]["severity"] == "WARNING"
 
         # === 10. Per-URL detail =======================================
         r = c.get(
             f"/api/reports/{today}/{report_run_id}/url",
-            params={"id": "example-site"},
+            params={"id": "1"},
         )
         assert r.status_code == 200
         detail = r.json()
-        assert detail["url_id"] == "example-site"
+        assert detail["url_id"] == "1"
         assert detail["analysis"]["overall_severity"] == "WARNING"
         assert sorted(detail["screenshots"]) == ["baseline", "current", "visual_diff"]
 
         # === 11. Screenshot bytes =====================================
         r = c.get(
             f"/api/reports/{today}/{report_run_id}/screenshot",
-            params={"url_id": "example-site", "which": "diff"},
+            params={"url_id": "1", "which": "diff"},
         )
         assert r.status_code == 200
         assert r.headers["content-type"] == "image/png"
@@ -297,7 +297,7 @@ def test_full_operator_workflow_end_to_end(e2e_env):
         # Conditional GET → 304.
         r304 = c.get(
             f"/api/reports/{today}/{report_run_id}/screenshot",
-            params={"url_id": "example-site", "which": "diff"},
+            params={"url_id": "1", "which": "diff"},
             headers={"If-None-Match": first_etag},
         )
         assert r304.status_code == 304

@@ -198,6 +198,45 @@ def test_urls_lists_all_with_result_type_and_severity(reports_client):
     assert by_id["beta"]["severity"] is None
 
 
+def test_urls_sorts_numeric_ids_descending(reports_client):
+    """Numeric URL ids (post slug-to-numeric migration) must come back in
+    strict numeric DESCENDING order, not lexicographic. Previously sorted
+    by name, which gave "1, 10, 11, ..., 19, 2, 20, ..." for a typical
+    site set - operator-confusing."""
+    rid = _seed_report_run(
+        date="01-01-2099",
+        url_results={
+            str(i): ("no_changes.json", {"checked_at": "01-01-2099 00:00:00"})
+            for i in [1, 2, 5, 10, 11, 19, 20, 27, 39]
+        },
+    )
+    r = reports_client.get(f"/api/reports/01-01-2099/{rid}/urls")
+    assert r.status_code == 200, r.text
+    ids = [item["url_id"] for item in r.json()["items"]]
+    assert ids == ["39", "27", "20", "19", "11", "10", "5", "2", "1"]
+
+
+def test_urls_mixed_numeric_and_slug_ids_keep_numeric_first(reports_client):
+    """Pre-migration slug dirs may still exist alongside numeric ones.
+    Numeric ids sort first (descending); slugs trail (ascending)."""
+    rid = _seed_report_run(
+        date="01-01-2099",
+        url_results={
+            "2": ("no_changes.json", {"checked_at": "01-01-2099 00:00:00"}),
+            "10": ("no_changes.json", {"checked_at": "01-01-2099 00:00:00"}),
+            "legacy-site": ("no_changes.json", {"checked_at": "01-01-2099 00:00:00"}),
+            "another-legacy": (
+                "no_changes.json",
+                {"checked_at": "01-01-2099 00:00:00"},
+            ),
+        },
+    )
+    r = reports_client.get(f"/api/reports/01-01-2099/{rid}/urls")
+    assert r.status_code == 200
+    ids = [item["url_id"] for item in r.json()["items"]]
+    assert ids == ["10", "2", "another-legacy", "legacy-site"]
+
+
 def test_urls_returns_empty_items_for_run_with_no_url_dirs(reports_client):
     """A run dir with only a manifest.json (no per-URL subdirs) returns
     an empty items list - not a 404, not a 500."""

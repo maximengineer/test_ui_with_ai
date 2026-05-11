@@ -524,6 +524,162 @@ def test_M4_500_path_marks_row_failed_with_error(client, monkeypatch):
 # --------------------------------------------------------------------------- #
 
 
+# --------------------------------------------------------------------------- #
+# DELETE /api/runs/{db_id} + POST /api/runs/bulk-delete                      #
+# --------------------------------------------------------------------------- #
+
+
+def _seed_artifacts_for(db_id: int, run_id: str, kind: str = "baseline") -> Path:
+    """Write a fake on-disk run dir + log file so we can verify the
+    delete route's cleanup helper actually removes them."""
+    today = settings.get_current_date()
+    kind_root = {
+        "baseline": settings.baseline_dir,
+        "current": settings.current_dir,
+        "comparator": settings.comparator_dir,
+        "report": settings.report_dir,
+    }[kind]
+    run_dir = kind_root / today / run_id
+    run_dir.mkdir(parents=True, exist_ok=True)
+    (run_dir / "manifest.json").write_text("{}", encoding="utf-8")
+    (run_dir / "x.txt").write_text("hi", encoding="utf-8")
+    log_path = settings.runs_log_dir / f"{db_id}.log"
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    log_path.write_text("subprocess output\n", encoding="utf-8")
+    return run_dir
+
+
+def test_delete_run_204_removes_db_row_and_on_disk_artifacts(client, fake_spawn):
+    """Spawn a run, force terminal, delete, verify everything's gone."""
+    r = client.post("/api/runs", json={"kind": "baseline"})
+    assert r.status_code == 202
+    db_id = r.json()["db_id"]
+    run_id = r.json()["run_id"]
+
+    db_path = settings.runs_db_path
+    with dbmod.connection_scope(db_path) as conn:
+        dbmod.mark_terminal(
+            conn,
+            db_id=db_id,
+            status="done",
+            finished_at=settings.get_current_datetime(),
+            exit_code=0,
+        )
+
+    # Materialize artifacts the delete route should clean up.
+    run_dir = _seed_artifacts_for(db_id, run_id, kind="baseline")
+    assert run_dir.exists()
+
+    r = client.delete(f"/api/runs/{db_id}")
+    assert r.status_code == 204
+
+    # DB row gone.
+    with dbmod.connection_scope(db_path) as conn:
+        assert dbmod.get_run(conn, db_id) is None
+    # On-disk dir gone.
+    assert not run_dir.exists()
+    # Log file gone.
+    assert not (settings.runs_log_dir / f"{db_id}.log").exists()
+
+
+def test_delete_run_404_for_unknown_id(client):
+    r = client.delete("/api/runs/99999")
+    assert r.status_code == 404
+
+
+def test_delete_run_409_for_running_row(client, fake_spawn):
+    """An in-flight subprocess is still writing to the artifact dir;
+    the delete route must refuse with 409 instead of orphaning the
+    runner. Operator waits for terminal status, then deletes."""
+    r = client.post("/api/runs", json={"kind": "baseline"})
+    db_id = r.json()["db_id"]
+    # fake_spawn leaves the row at `running` (it calls mark_running but
+    # not mark_terminal). Try to delete it.
+    r = client.delete(f"/api/runs/{db_id}")
+    assert r.status_code == 409
+    assert "in-flight" in r.json()["detail"].lower()
+    # Row MUST still be there.
+    with dbmod.connection_scope(settings.runs_db_path) as conn:
+        assert dbmod.get_run(conn, db_id) is not None
+
+
+def test_delete_run_204_when_artifacts_already_missing(client, fake_spawn):
+    """Cleanup is best-effort: a row whose on-disk dir was already
+    removed (e.g. operator manually `rm -rf`d data/) still deletes
+    cleanly. No 500 from a missing rmtree target."""
+    r = client.post("/api/runs", json={"kind": "baseline"})
+    db_id = r.json()["db_id"]
+    with dbmod.connection_scope(settings.runs_db_path) as conn:
+        dbmod.mark_terminal(
+            conn,
+            db_id=db_id,
+            status="failed",
+            finished_at=settings.get_current_datetime(),
+            exit_code=1,
+        )
+    # Don't seed any artifacts - directory simply doesn't exist.
+    r = client.delete(f"/api/runs/{db_id}")
+    assert r.status_code == 204
+
+
+def test_bulk_delete_returns_per_id_outcomes(client, fake_spawn):
+    """Best-effort bulk: returns deleted / skipped_not_found /
+    skipped_in_flight as separate lists so the frontend can show a
+    structured summary."""
+    # Seed 3 rows: one terminal (deletable), one in-flight, one we'll
+    # never create (not_found).
+    r1 = client.post("/api/runs", json={"kind": "baseline"})
+    r2 = client.post("/api/runs", json={"kind": "current"})
+    db_path = settings.runs_db_path
+    with dbmod.connection_scope(db_path) as conn:
+        dbmod.mark_terminal(
+            conn,
+            db_id=r1.json()["db_id"],
+            status="done",
+            finished_at=settings.get_current_datetime(),
+            exit_code=0,
+        )
+        # r2 left at running.
+
+    r = client.post(
+        "/api/runs/bulk-delete",
+        json={"db_ids": [r1.json()["db_id"], r2.json()["db_id"], 99999]},
+    )
+    assert r.status_code == 200
+    body = r.json()
+    assert body["deleted"] == [r1.json()["db_id"]]
+    assert body["skipped_in_flight"] == [r2.json()["db_id"]]
+    assert body["skipped_not_found"] == [99999]
+
+
+def test_bulk_delete_422_for_empty_list(client):
+    """Empty db_ids list = client bug = 422 (not a silent 200)."""
+    r = client.post("/api/runs/bulk-delete", json={"db_ids": []})
+    assert r.status_code == 422
+
+
+def test_bulk_delete_idempotent_on_resubmit(client, fake_spawn):
+    """Re-submitting the same db_ids after success returns them in
+    `skipped_not_found` instead of failing - matches the operator's
+    intuition that 'delete X' is idempotent."""
+    r = client.post("/api/runs", json={"kind": "baseline"})
+    db_id = r.json()["db_id"]
+    with dbmod.connection_scope(settings.runs_db_path) as conn:
+        dbmod.mark_terminal(
+            conn,
+            db_id=db_id,
+            status="done",
+            finished_at=settings.get_current_datetime(),
+            exit_code=0,
+        )
+
+    first = client.post("/api/runs/bulk-delete", json={"db_ids": [db_id]})
+    assert first.json()["deleted"] == [db_id]
+    second = client.post("/api/runs/bulk-delete", json={"db_ids": [db_id]})
+    assert second.json()["deleted"] == []
+    assert second.json()["skipped_not_found"] == [db_id]
+
+
 def test_lifespan_recovers_orphaned_running_row(tmp_path, monkeypatch):
     """A row left in `running` from a 'previous' dashboard instance must be
     transitioned to `interrupted` by the lifespan's startup recovery path -
