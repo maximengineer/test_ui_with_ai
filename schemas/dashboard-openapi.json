@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "AI Frontend Regression Dashboard",
-    "description": "Local-first dashboard for managing UI regression runs. See REFACTOR_AND_DASHBOARD_PLAN.md milestone C for scope.",
+    "description": "Local-first dashboard for managing UI regression runs. See dashboard/README.md for layout, ARCHITECTURE.md for the system tour.",
     "version": "0.1.0"
   },
   "paths": {
@@ -61,6 +61,45 @@
           },
           "422": {
             "description": "Body validation failed"
+          }
+        }
+      }
+    },
+    "/api/sites/bulk": {
+      "post": {
+        "tags": [
+          "sites"
+        ],
+        "summary": "Post Sites Bulk",
+        "description": "Append multiple sites at once. ids + names auto-generated.\n\nAll-or-nothing: any failing URL aborts the whole batch (Pydantic\nvalidation error inside `bulk_add_sites` is re-raised here as a\n422 with the offending URL identified). FastAPI's auto-422 only\napplies to top-level body params, not to model construction\nINSIDE the helper - so we catch + re-raise explicitly.",
+        "operationId": "post_sites_bulk_api_sites_bulk_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SiteBulkCreateIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/SiteOut"
+                  },
+                  "type": "array",
+                  "title": "Response Post Sites Bulk Api Sites Bulk Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "At least one URL failed validation; nothing was written"
           }
         }
       }
@@ -147,6 +186,41 @@
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "/api/sites/bulk-delete": {
+      "post": {
+        "tags": [
+          "sites"
+        ],
+        "summary": "Post Sites Bulk Delete",
+        "description": "Remove multiple sites from sites.yml in a single atomic write.\n\nPer-id outcomes - any id not present in the file lands in\n`skipped_not_found` rather than failing the call. Mirrors the\n`runs/bulk-delete` semantics so the frontend can render the same\n\"deleted N, skipped K\" toast in both places.\n\nOn-disk per-site data dirs are NOT touched (matches single-id DELETE).",
+        "operationId": "post_sites_bulk_delete_api_sites_bulk_delete_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SiteBulkDeleteIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SiteBulkDeleteOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Body validation failed (empty list, etc.)"
           }
         }
       }
@@ -392,6 +466,46 @@
             }
           }
         }
+      },
+      "delete": {
+        "tags": [
+          "runs"
+        ],
+        "summary": "Delete Run Route",
+        "description": "Remove a run: DB row + on-disk artifacts + log file.\n\nRefuses to delete a `pending` or `running` row (the runner is still\nwriting to the artifact dir; deleting from under it would orphan\nthe subprocess + leave half-written artifacts behind). Operator\nmust wait for the run to terminate.",
+        "operationId": "delete_run_route_api_runs__db_id__delete",
+        "parameters": [
+          {
+            "name": "db_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Db Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "404": {
+            "description": "No row with this db_id"
+          },
+          "409": {
+            "description": "Run is pending/running; refuse to delete in-flight"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/api/sync": {
@@ -463,6 +577,41 @@
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "/api/runs/bulk-delete": {
+      "post": {
+        "tags": [
+          "runs"
+        ],
+        "summary": "Post Runs Bulk Delete",
+        "description": "Delete many runs at once. Best-effort: each row is attempted\nindependently; per-id outcomes returned in the response.\n\nPOST (not DELETE) because DELETE-with-body has spotty client +\nproxy support. Idempotent in the operator's intuition: re-submitting\nthe same db_ids after a successful delete returns them all in\n`skipped_not_found` rather than failing.",
+        "operationId": "post_runs_bulk_delete_api_runs_bulk_delete_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RunBulkDeleteIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunBulkDeleteOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Empty db_ids list"
           }
         }
       }
@@ -1180,6 +1329,55 @@
         ],
         "title": "ReportUrlsOut"
       },
+      "RunBulkDeleteIn": {
+        "properties": {
+          "db_ids": {
+            "items": {
+              "type": "integer"
+            },
+            "type": "array",
+            "maxItems": 1000,
+            "minItems": 1,
+            "title": "Db Ids"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "db_ids"
+        ],
+        "title": "RunBulkDeleteIn",
+        "description": "`POST /api/runs/bulk-delete` body. List of `db_id`s to remove.\n\nPOST-with-body (vs DELETE-with-body) because DELETE+body is allowed\nby RFC 9110 but inconsistently supported across HTTP clients +\nproxies. POST is the safe, universally-routable choice for \"this\noperation takes a list.\"\n\n`min_length=1` rejects an empty list with 422 (no work = client bug)."
+      },
+      "RunBulkDeleteOut": {
+        "properties": {
+          "deleted": {
+            "items": {
+              "type": "integer"
+            },
+            "type": "array",
+            "title": "Deleted"
+          },
+          "skipped_not_found": {
+            "items": {
+              "type": "integer"
+            },
+            "type": "array",
+            "title": "Skipped Not Found"
+          },
+          "skipped_in_flight": {
+            "items": {
+              "type": "integer"
+            },
+            "type": "array",
+            "title": "Skipped In Flight"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "RunBulkDeleteOut",
+        "description": "`POST /api/runs/bulk-delete` response.\n\nPer-id outcomes returned so the operator can see exactly which\nrows were removed vs skipped (e.g. the row was already gone, or\nwas in a non-deletable status). Best-effort batch semantics: a\nsingle failing row doesn't abort the rest. The frontend can show\na toast like \"deleted 7, skipped 2 (1 not found, 1 still running)\"."
+      },
       "RunListOut": {
         "properties": {
           "items": {
@@ -1392,6 +1590,68 @@
         ],
         "title": "RunSpawnedOut",
         "description": "202 response from `POST /api/runs`. `db_id` lets the frontend poll\n`/api/runs/{db_id}` for status; `run_id` lets it correlate against the\non-disk run dir as soon as the subprocess produces it."
+      },
+      "SiteBulkCreateIn": {
+        "properties": {
+          "urls": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 1000,
+            "minItems": 1,
+            "title": "Urls"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "urls"
+        ],
+        "title": "SiteBulkCreateIn",
+        "description": "`POST /api/sites/bulk` body. URLs only - id and name are\nauto-generated server-side (id = next sequential number,\nname = the URL itself; operator can rename later via PATCH).\n\nAll-or-nothing: any single bad URL aborts the entire batch with\na 422 from the underlying Pydantic validator. Operator gets one\nclear error and re-submits.\n\n`min_length=1` on the list forbids `{\"urls\": []}` - sending no\nwork to do is a client bug, surface it as 422 not 200."
+      },
+      "SiteBulkDeleteIn": {
+        "properties": {
+          "ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 1000,
+            "minItems": 1,
+            "title": "Ids"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "ids"
+        ],
+        "title": "SiteBulkDeleteIn",
+        "description": "`POST /api/sites/bulk-delete` body. List of site ids to remove from\nsites.yml in one atomic write.\n\n`min_length=1` mirrors `SiteBulkCreateIn` - a client sending no work\nis a bug; surface it as 422 not 200. Per-id outcomes (`deleted` vs\n`skipped_not_found`) are returned in the response so the operator\ncan see which ids were already gone (e.g. another tab deleted them\nin the meantime)."
+      },
+      "SiteBulkDeleteOut": {
+        "properties": {
+          "deleted": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Deleted"
+          },
+          "skipped_not_found": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Skipped Not Found"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "SiteBulkDeleteOut",
+        "description": "`POST /api/sites/bulk-delete` response. Per-id outcomes mirror the\n`runs/bulk-delete` shape so the frontend can render the same\n\"deleted N, skipped K\" toast in both places."
       },
       "SiteCreateIn": {
         "properties": {

@@ -189,8 +189,9 @@ def create_app(*, dev_mode: bool | None = None) -> FastAPI:
     app = FastAPI(
         title="AI Frontend Regression Dashboard",
         description=(
-            "Local-first dashboard for managing UI regression runs. See "
-            "REFACTOR_AND_DASHBOARD_PLAN.md milestone C for scope."
+            "Local-first dashboard for managing UI regression runs. "
+            "See dashboard/README.md for layout, ARCHITECTURE.md for the "
+            "system tour."
         ),
         version="0.1.0",
         lifespan=lifespan,

@@ -1,6 +1,6 @@
 # Crawler determinism baseline
 
-UI regression analysis is only as useful as its inputs are deterministic. Every source of noise in the crawl becomes a false positive that the AI layer then has to explain away. This doc records what determinism controls we use today, what we *don't* control, and which gaps are most likely to produce noisy diffs. Comprehensive determinism work is out of scope for the current refactor - see `REFACTOR_AND_DASHBOARD_PLAN.md` non-goals - but knowing the gaps is the prerequisite for fixing them later.
+UI regression analysis is only as useful as its inputs are deterministic. Every source of noise in the crawl becomes a false positive that the AI layer then has to explain away. This doc records what determinism controls we use today, what we *don't* control, and which gaps are most likely to produce noisy diffs. Comprehensive determinism work is intentionally out of scope (see [`BACKLOG.md`](../BACKLOG.md)); knowing the gaps is the prerequisite for fixing them later.
 
 ## What we control today
 

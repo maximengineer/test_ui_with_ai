@@ -11,7 +11,7 @@
 [project]
 name = "ai-frontend-regression-tester"
 version = "1.0.0"
-description = "AI-assisted UI regression analysis tool. See REFACTOR_AND_DASHBOARD_PLAN.md for current status."
+description = "AI-assisted UI regression analysis tool. See ARCHITECTURE.md for the system tour."
 authors = [{name = "Your Team", email = "you@example.com"}]
 requires-python = ">=3.13,<4.0"
 dependencies = [
@@ -58,11 +58,20 @@ dependencies = [
 [project.scripts]
 afr = "test_ui.cli:cli"
 
-# `[tool.poetry]` deliberately empty - Poetry 2.x reads name/version/etc.
-# from `[project]`. Kept as an explicit marker so a future contributor
-# doesn't try to re-add deprecated keys here.
+# Poetry 2.x reads name/version/description/authors from `[project]`.
+# `[tool.poetry]` keeps only what PEP 621 doesn't cover:
+#   - `packages` because the project name (`ai-frontend-regression-tester`)
+#     doesn't match either Python package directory (`test_ui`,
+#     `dashboard`), so Poetry can't auto-discover them. Without this,
+#     `poetry install` errors with "No file/folder found for package
+#     ai-frontend-regression-tester" on a fresh install.
+#   - `package-mode = true` is the explicit-marker default.
 [tool.poetry]
 package-mode = true
+packages = [
+    { include = "test_ui" },
+    { include = "dashboard" },
+]
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^9.0.3"

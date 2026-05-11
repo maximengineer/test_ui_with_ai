@@ -2,7 +2,9 @@
 
 A tool for capturing baseline / current snapshots of web pages, comparing visual and structural differences, and (optionally) generating AI-assisted reports about what changed and why.
 
-> **Status:** undergoing a multi-milestone refactor. See [`REFACTOR_AND_DASHBOARD_PLAN.md`](REFACTOR_AND_DASHBOARD_PLAN.md) for the work in progress and the per-milestone deliverables.
+> **New here?** [`ARCHITECTURE.md`](ARCHITECTURE.md) is the system-level tour — what each component does, how data flows through the pipeline, where to look for X. Read that before diving into code.
+>
+> Forward-looking work (deferred deps, latent bugs, intentional out-of-scope) lives in [`BACKLOG.md`](BACKLOG.md). The original multi-milestone refactor plan that built the current state is archived in [`docs/history/`](docs/history/) as a decision log.
 
 ## Current capabilities and limitations
 
@@ -10,12 +12,12 @@ A tool for capturing baseline / current snapshots of web pages, comparing visual
 
 - CLI capture of baselines and current snapshots via [Crawl4AI](https://github.com/unclecode/crawl4ai), with deterministic asset naming.
 - Visual diffing (SSIM-based) and structural diffing (HTML / CSS / JS) between baseline and current.
-- Generation of an HTML report from the comparison data, with an optional AI analysis step (Google Gemini).
+- Generation of an HTML report from the comparison data, with an optional AI analysis step (any OpenAI-compatible provider; default is OpenRouter + qwen/qwen3.6-plus).
 - Docker Compose layout with a Python service and a Node AI-analyzer service.
 
 **What is being fixed in the current refactor:**
 
-- The AI-analysis step today does **not** pass meaningful structured diff data to Gemini. The model effectively gets screenshots plus a few counts. Phase A.1 of the plan rewires this so the model actually sees CSS / JS / HTML changes.
+- The AI-analysis step today does **not** pass meaningful structured diff data to the model. It effectively gets screenshots plus a few counts. Phase A.1 of the plan rewires this so the model actually sees CSS / JS / HTML changes.
 - Two large modules (`test_ui/report/generator.py`, `test_ui/comparator/engine.py`) are being broken into single-responsibility submodules.
 - Test coverage and CI are being added; the project currently has effectively none.
 - A web dashboard is planned (Milestone C) but does not exist yet.
@@ -38,11 +40,11 @@ There are two supported paths: Docker (recommended) and local development.
 
 ### Docker
 
-Requires Docker and Docker Compose. Get a Gemini API key from [Google AI Studio](https://aistudio.google.com/app/apikey).
+Requires Docker and Docker Compose. Get an OpenRouter API key from [openrouter.ai/keys](https://openrouter.ai/keys).
 
 ```bash
 cp .env.example .env
-# Edit .env and set GEMINI_API_KEY=<your-key>
+# Edit .env and set OPENROUTER_API_KEY=<your-key>
 
 # Optional: edit test_ui/sites.yml to point at your URLs.
 
@@ -70,7 +72,7 @@ pip install poetry && poetry install
 docker compose up -d ai-analyzer
 
 cp .env.example .env
-# Edit .env and set GEMINI_API_KEY=<your-key>
+# Edit .env and set OPENROUTER_API_KEY=<your-key>
 
 make test-local-full                # baseline → current → compare → report
 ```
@@ -88,8 +90,9 @@ All runtime settings are read from environment variables prefixed `AFR_` (or fro
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `GEMINI_API_KEY` | - | Google Gemini API key. Required if AI is enabled. |
-| `GEMINI_MODEL` | `gemini-2.5-pro` | Model to use. |
+| `OPENROUTER_API_KEY` | - | OpenRouter API key. Required if AI is enabled. |
+| `AFR_AI_MODEL` | `qwen/qwen3.6-plus` | OpenRouter model slug (provider/model). |
+| `AFR_AI_BASE_URL` | `https://openrouter.ai/api/v1` | OpenAI-compatible base URL. Override to point at a different provider. |
 | `AFR_AI_ANALYZER_SERVICE_URL` | `http://ai-analyzer:3000` | URL of the Node AI service. Set to `http://localhost:3000` for local dev. |
 | `AFR_AI_ENABLED` | `true` | Set `false` to skip AI calls entirely. |
 | `AFR_AI_CONCURRENCY` | `3` | Max concurrent AI requests per orchestration. |
@@ -188,7 +191,7 @@ make audit                          # check for hardcoded paths
 .venv/bin/ruff check .              # lint
 ```
 
-The work-in-progress refactor plan is in [`REFACTOR_AND_DASHBOARD_PLAN.md`](REFACTOR_AND_DASHBOARD_PLAN.md). Open issues and pull requests should reference the relevant milestone (A / B / C) and phase.
+Open issues and pull requests should reference [`BACKLOG.md`](BACKLOG.md) when the work is a known follow-up; for context on past architectural decisions see the archived [`docs/history/REFACTOR_AND_DASHBOARD_PLAN.md`](docs/history/REFACTOR_AND_DASHBOARD_PLAN.md).
 
 ## License
 
