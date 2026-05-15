@@ -7,6 +7,8 @@ lifecycle CM (introduced in the same cleanup pass).
 
 from __future__ import annotations
 
+import asyncio
+import time
 from pathlib import Path
 
 import httpx
@@ -23,6 +25,31 @@ from ..report.generator import ReportGenerator
 # would create a back-edge in the dependency graph for no real win
 # (Console() is cheap; both write to the same stdout).
 console = Console()
+
+
+async def _process_one(
+    reporter: ReportGenerator,
+    idx: int,
+    url_data: dict,
+    total: int,
+    run_root,
+) -> dict:
+    url_name = url_data["url_name"]
+    console.print(
+        f"[blue]🔄 Processing {url_name} ({idx}/{total})...[/blue]"
+    )
+    try:
+        result = await reporter.process_single_url(url_data, run_root)
+        severity = result.get("ai_analysis", {}).get(
+            "overall_severity", "UNKNOWN"
+        )
+        console.print(
+            f"[green]   ✅ {url_name} - Severity: {severity}[/green]"
+        )
+        return result
+    except Exception as e:
+        console.print(f"[red]   ❌ {url_name} Failed: {str(e)}[/red]")
+        return {"url": url_name, "error": str(e)}
 
 
 class Orchestrator:
@@ -159,9 +186,8 @@ class Orchestrator:
         comparator_run_dir = require_complete_run(
             Path(comparator_root), report_date, kind_label="comparator"
         )
-        # is_valid_run_id guard handles the legacy fallback case (date dir
-        # name like '01-01-2099' is not a ULID, so source stays empty
-        # rather than recording a junk value).
+        # Guard source provenance: only persist canonical run_id values.
+        # If the resolved path name is not a valid ULID, keep source unset.
         comparator_run_id = (
             comparator_run_dir.name
             if is_valid_run_id(comparator_run_dir.name)
@@ -228,27 +254,57 @@ class Orchestrator:
 
             if urls_with_changes:
                 console.print(
-                    f"[cyan]🤖 Processing {len(urls_with_changes)} URLs with AI analysis...[/cyan]"
+                    f"[cyan]🤖 Processing {len(urls_with_changes)} URLs with AI analysis "
+                    f"(concurrency={settings.ai_concurrency})...[/cyan]"
                 )
-                for i, url_data in enumerate(urls_with_changes, 1):
+                t0_batch = time.perf_counter()
+
+                results = await asyncio.gather(
+                    *[
+                        _process_one(
+                            self.reporter, i, url_data, len(urls_with_changes), ctx.run_root
+                        )
+                        for i, url_data in enumerate(urls_with_changes, 1)
+                    ]
+                )
+                batch_elapsed = time.perf_counter() - t0_batch
+                avg_per_url = batch_elapsed / len(urls_with_changes)
+
+                # Timing summary from per-URL timings (when present)
+                ai_times = [
+                    r.get("timings", {}).get("ai", 0)
+                    for r in results
+                    if isinstance(r, dict) and "timings" in r
+                ]
+                load_times = [
+                    r.get("timings", {}).get("load", 0)
+                    for r in results
+                    if isinstance(r, dict) and "timings" in r
+                ]
+                persist_times = [
+                    r.get("timings", {}).get("persist", 0)
+                    for r in results
+                    if isinstance(r, dict) and "timings" in r
+                ]
+                console.print(
+                    f"[cyan]⏱ Batch complete: {batch_elapsed:.1f}s total, "
+                    f"{avg_per_url:.1f}s/URL avg"
+                )
+                if ai_times:
                     console.print(
-                        f"[blue]🔄 Processing {url_data['url_name']} "
-                        f"({i}/{len(urls_with_changes)})...[/blue]"
+                        f"[cyan]   AI latency:  min={min(ai_times):.1f}s "
+                        f"max={max(ai_times):.1f}s avg={sum(ai_times)/len(ai_times):.1f}s"
                     )
-                    try:
-                        result = await self.reporter.process_single_url(
-                            url_data, ctx.run_root
-                        )
-                        severity = result.get("ai_analysis", {}).get(
-                            "overall_severity", "UNKNOWN"
-                        )
-                        console.print(
-                            f"[green]   ✅ Completed - Severity: {severity}[/green]"
-                        )
-                    except Exception as e:
-                        console.print(f"[red]   ❌ Failed: {str(e)}[/red]")
-                        # Error path is already inside process_single_url
-                        continue
+                if load_times:
+                    console.print(
+                        f"[cyan]   Load I/O:   min={min(load_times):.1f}s "
+                        f"max={max(load_times):.1f}s avg={sum(load_times)/len(load_times):.1f}s"
+                    )
+                if persist_times:
+                    console.print(
+                        f"[cyan]   Persist:    min={min(persist_times):.1f}s "
+                        f"max={max(persist_times):.1f}s avg={sum(persist_times)/len(persist_times):.1f}s"
+                    )
 
             console.print(
                 "[cyan]📈 Generating cross-URL analysis and enhanced report...[/cyan]"

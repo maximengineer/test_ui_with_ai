@@ -77,6 +77,11 @@ class Settings(BaseSettings):
     ai_enabled: bool = True
     # Concurrency cap for AI requests (Phase A.1.10). Default 3.
     ai_concurrency: int = 3
+    # Maximum dimension (width or height) for screenshots sent to the AI
+    # analyzer. Full-resolution 1920x1080 PNGs can exceed 500 KB each in
+    # base64, burning quota and latency. 800 px preserves enough detail for
+    # visual change detection while cutting payload size by ~60-80%.
+    ai_max_screenshot_dimension: int = 800
 
     model_config = SettingsConfigDict(
         env_file=".env",

@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import time
 import uuid
 from typing import Any
 
@@ -33,8 +34,8 @@ from ..contracts.ai_contract import (
     AIAnalysisResponse,
     AnalysisOutput,
     Screenshots,
-    StructuredData,
 )
+from . import models
 
 
 class AIClient:
@@ -70,12 +71,7 @@ class AIClient:
             current=screenshots.get("current_b64"),
             visual_diff=screenshots.get("visual_diff_b64"),
         )
-        sd = StructuredData(
-            change_summary=structured_data.get("change_summary", {}),
-            html_changes=structured_data.get("html_changes", {}),
-            css_changes=structured_data.get("css_changes", {}),
-            js_changes=structured_data.get("js_changes", {}),
-        )
+        sd = models.validate_structured_data_for_ai(structured_data)
         request = AIAnalysisRequest(
             request_id=str(uuid.uuid4()),
             url=url,
@@ -119,10 +115,16 @@ class AIClient:
                 # don't hold the slot - concurrent retries should be bounded
                 # by in-flight requests, not by total elapsed time.
                 async with self.semaphore:
+                    t0 = time.perf_counter()
                     response = await self.client.post(
                         f"{self.ai_analyzer_url}/api/compare",
                         json=ai_request,
                         timeout=120.0,
+                    )
+                    elapsed = time.perf_counter() - t0
+                    logger.info(
+                        f"AI round-trip for {url}: {elapsed:.2f}s "
+                        f"(status={response.status_code})"
                     )
 
                 # Don't raise_for_status - server returns typed error bodies

@@ -223,7 +223,7 @@
                     {% if ai.model %}<p><strong>Model:</strong> {{ ai.model }}</p>{% endif %}
                     <p><strong>Details:</strong> {{ ai.details }}</p>
                     {% if ai.retryable %}
-                    <p style="margin-top: 12px;">Retry this URL with: <code>afr enhanced-report --date {{ report_date }} --only {{ url_result.url }}</code></p>
+                    <p style="margin-top: 12px;">Retry this URL with: <code>afr retry-url --date {{ report_date }} --url {{ url_result.url }}</code></p>
                     {% endif %}
                 </div>
 

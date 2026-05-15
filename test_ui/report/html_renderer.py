@@ -24,20 +24,38 @@ edit it without touching Python.
 
 from __future__ import annotations
 
+import time
 from pathlib import Path
 from typing import Any
 
 from jinja2 import Template
+from loguru import logger
 
 from ..config import settings
 
 
 _TEMPLATE_PATH = Path(__file__).parent / "templates" / "enhanced_report.html.j2"
 
+# Module-level cache so the template is compiled once per process, not once
+# per report render. Cuts ~5-20 ms per call (negligible for one report, but
+# measurable when profiling unit tests that render repeatedly).
+_TEMPLATE: Template | None = None
+
+
+def _get_template() -> Template:
+    global _TEMPLATE
+    if _TEMPLATE is None:
+        _TEMPLATE = Template(_TEMPLATE_PATH.read_text(encoding="utf-8"))
+    return _TEMPLATE
+
 
 def render(template_data: dict[str, Any]) -> str:
     """Render the enhanced-report template against `template_data`. No side effects."""
-    return Template(_TEMPLATE_PATH.read_text(encoding="utf-8")).render(template_data)
+    t0 = time.perf_counter()
+    result = _get_template().render(template_data)
+    elapsed = time.perf_counter() - t0
+    logger.debug(f"HTML template rendered in {elapsed:.3f}s")
+    return result
 
 
 def determine_system_status(aggregated_analysis: dict[str, Any]) -> str:

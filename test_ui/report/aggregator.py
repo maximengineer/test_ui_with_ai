@@ -14,25 +14,26 @@ from typing import Any
 from loguru import logger
 
 from ..config import settings
+from . import models
 from .confidence import calculate_confidence_metrics
 
 
-def aggregate_analyses(all_url_results: list[dict[str, Any]]) -> dict[str, Any]:
+def aggregate_analyses(all_url_results: list[models.URLResultInput]) -> dict[str, Any]:
     """Bucket per-URL results by severity / status; compute summary + insights."""
-    logger.info(f"Aggregating analysis from {len(all_url_results)} URLs")
+    rows = models.coerce_result_views(all_url_results)
+    logger.info(f"Aggregating analysis from {len(rows)} URLs")
 
-    critical_issues: list[dict[str, Any]] = []
-    warnings: list[dict[str, Any]] = []
-    safe_changes: list[dict[str, Any]] = []
-    errors: list[dict[str, Any]] = []
-    no_changes: list[dict[str, Any]] = []
+    critical_issues: list[models.URLResultView] = []
+    warnings: list[models.URLResultView] = []
+    safe_changes: list[models.URLResultView] = []
+    errors: list[models.URLResultView] = []
+    no_changes: list[models.URLResultView] = []
 
-    for result in all_url_results:
-        ai_analysis = result.get("ai_analysis", {})
-        result_type = ai_analysis.get("result_type")
+    for result in rows:
+        result_type = result.result_type
 
         if result_type == "analysis_success":
-            severity = ai_analysis.get("overall_severity")
+            severity = result.overall_severity
             if severity == "CRITICAL":
                 critical_issues.append(result)
             elif severity == "WARNING":
@@ -54,10 +55,10 @@ def aggregate_analyses(all_url_results: list[dict[str, Any]]) -> dict[str, Any]:
             # Synthetic no-change records have analysis_type="no_changes_detected"
             # AND severity="SAFE" - check analysis_type first or they'd be
             # miscategorized as real SAFE analyses.
-            if ai_analysis.get("analysis_type") == "no_changes_detected":
+            if result.analysis_type == "no_changes_detected":
                 no_changes.append(result)
             else:
-                severity = ai_analysis.get("overall_severity", "UNKNOWN")
+                severity = result.overall_severity or "UNKNOWN"
                 if severity == "CRITICAL":
                     critical_issues.append(result)
                 elif severity == "WARNING":
@@ -69,20 +70,8 @@ def aggregate_analyses(all_url_results: list[dict[str, Any]]) -> dict[str, Any]:
                 else:
                     warnings.append(result)
 
-    total_urls = len(all_url_results)
-    urls_with_changes = len(
-        [
-            r
-            for r in all_url_results
-            if r.get("ai_analysis", {}).get("result_type") == "analysis_success"
-            or (
-                r.get("processing_status") == "success"
-                and r.get("ai_analysis", {}).get("analysis_type")
-                != "no_changes_detected"
-                and not r.get("ai_analysis", {}).get("result_type")  # legacy
-            )
-        ]
-    )
+    total_urls = len(rows)
+    urls_with_changes = len([r for r in rows if r.is_url_with_changes])
 
     return {
         "summary": {
@@ -98,32 +87,33 @@ def aggregate_analyses(all_url_results: list[dict[str, Any]]) -> dict[str, Any]:
         "severity_breakdown": {
             "critical": [
                 {
-                    "url": r["url"],
-                    "impact": r["ai_analysis"].get("business_impact", "UNKNOWN"),
+                    "url": r.url,
+                    "impact": r.business_impact,
                 }
                 for r in critical_issues
             ],
             "warnings": [
                 {
-                    "url": r["url"],
-                    "impact": r["ai_analysis"].get("business_impact", "UNKNOWN"),
+                    "url": r.url,
+                    "impact": r.business_impact,
                 }
                 for r in warnings
             ],
-            "safe": [{"url": r["url"]} for r in safe_changes],
+            "safe": [{"url": r.url} for r in safe_changes],
             "errors": [
-                {"url": r["url"], "error": r.get("error", "Processing error")}
+                {"url": r.url, "error": r.error or "Processing error"}
                 for r in errors
             ],
         },
-        "patterns": identify_common_patterns(all_url_results),
-        "recommendations": generate_global_recommendations(all_url_results),
-        "confidence_metrics": calculate_confidence_metrics(all_url_results),
+        "patterns": identify_common_patterns(rows),
+        "recommendations": generate_global_recommendations(rows),
+        "confidence_metrics": calculate_confidence_metrics(rows),
     }
 
 
-def identify_common_patterns(all_url_results: list[dict[str, Any]]) -> dict[str, Any]:
+def identify_common_patterns(all_url_results: list[models.URLResultInput]) -> dict[str, Any]:
     """Identify common HTML change types and recurring functional-impact keywords."""
+    rows = models.coerce_result_views(all_url_results)
     patterns: dict[str, Any] = {
         "common_html_changes": {},
         "recurring_issues": [],
@@ -135,11 +125,11 @@ def identify_common_patterns(all_url_results: list[dict[str, Any]]) -> dict[str,
     html_change_types: dict[str, int] = {}
     total_html_changes = 0
 
-    for result in all_url_results:
-        structured_data = result.get("structured_data", {})
+    for result in rows:
+        structured_data = result.structured_data
         html_changes = structured_data.get("html_changes", {})
 
-        if "changes" in html_changes:
+        if isinstance(html_changes, dict) and "changes" in html_changes:
             for change in html_changes["changes"][:10]:  # cap to avoid huge data
                 change_type = change.get("type", "unknown")
                 html_change_types[change_type] = (
@@ -155,17 +145,14 @@ def identify_common_patterns(all_url_results: list[dict[str, Any]]) -> dict[str,
     }
 
     impact_distribution: dict[str, int] = {}
-    for result in all_url_results:
-        ai_analysis = result.get("ai_analysis", {})
-        impact = ai_analysis.get("business_impact", "UNKNOWN")
+    for result in rows:
+        impact = result.business_impact
         impact_distribution[impact] = impact_distribution.get(impact, 0) + 1
     patterns["business_impact_distribution"] = impact_distribution
 
     functional_impacts: list[str] = []
-    for result in all_url_results:
-        detailed_analysis = result.get("ai_analysis", {}).get("detailed_analysis", {})
-        impacts = detailed_analysis.get("functional_impact", [])
-        functional_impacts.extend(impacts[:3])
+    for result in rows:
+        functional_impacts.extend(result.functional_impacts[:3])
 
     impact_counts: dict[str, int] = {}
     for impact in functional_impacts:
@@ -180,7 +167,7 @@ def identify_common_patterns(all_url_results: list[dict[str, Any]]) -> dict[str,
         {
             "keyword": keyword,
             "frequency": count,
-            "urls_affected": min(count, len(all_url_results)),
+            "urls_affected": min(count, len(rows)),
         }
         for keyword, count in recurring_keywords
         if count > 1
@@ -190,18 +177,19 @@ def identify_common_patterns(all_url_results: list[dict[str, Any]]) -> dict[str,
 
 
 def generate_global_recommendations(
-    all_url_results: list[dict[str, Any]],
+    all_url_results: list[models.URLResultInput],
 ) -> dict[str, list[str]]:
     """Translate severity counts into immediate / strategic / process / monitoring suggestions."""
+    rows = models.coerce_result_views(all_url_results)
     critical_count = sum(
         1
-        for r in all_url_results
-        if r.get("ai_analysis", {}).get("overall_severity") == "CRITICAL"
+        for r in rows
+        if r.overall_severity == "CRITICAL"
     )
     warning_count = sum(
         1
-        for r in all_url_results
-        if r.get("ai_analysis", {}).get("overall_severity") == "WARNING"
+        for r in rows
+        if r.overall_severity == "WARNING"
     )
     # Phase A.1.8 moved errors out of `overall_severity` (which is now
     # constrained to CRITICAL/WARNING/SAFE) and into a separate
@@ -211,8 +199,8 @@ def generate_global_recommendations(
     # never fired. Match the discriminator-based logic in aggregate_analyses.
     error_count = sum(
         1
-        for r in all_url_results
-        if r.get("ai_analysis", {}).get("result_type") == "analysis_error"
+        for r in rows
+        if r.is_analysis_error
     )
 
     recommendations: dict[str, list[str]] = {
@@ -244,9 +232,9 @@ def generate_global_recommendations(
         )
 
     total_changes = sum(
-        1 for r in all_url_results if r.get("processing_status") == "success"
+        1 for r in rows if r.processing_status == "success"
     )
-    if total_changes > len(all_url_results) * 0.7:
+    if total_changes > len(rows) * 0.7:
         recommendations["strategic_actions"].append(
             "High change volume detected - consider impact on user experience consistency"
         )

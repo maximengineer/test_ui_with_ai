@@ -1,111 +1,128 @@
 # Input data shapes
 
-Documents the actual shape of the structured-diff JSON files the comparator produces and the AI analyzer consumes. This drives the Pydantic contract models in `test_ui/contracts/ai_contract.py` (Phase A.1.2) and the Node prompt construction (Phase A.1.4).
+Documents the actual comparator output shapes consumed by the report and AI
+layers.
 
-> **Source of truth:** [`test_ui/comparator/engine.py`](../test_ui/comparator/engine.py). The shapes documented here are derived from reading the producer code, not from observing live data (no real comparator output existed at the time of writing). Synthetic example fixtures live in [`tests/fixtures/example_diffs/`](../tests/fixtures/example_diffs/) and match these shapes.
+## Scope and source of truth
 
-## Files emitted per URL
+This file describes on-disk JSON produced by the comparator stage:
 
-The comparator writes per-URL outputs to:
+- `test_ui/comparator/engine.py`
+- `test_ui/comparator/dom.py`
+- `test_ui/comparator/assets.py`
+- `test_ui/comparator/summary.py`
 
+The report stage reads these files via:
+
+- `test_ui/report/discovery.py`
+- `test_ui/report/loader.py`
+
+If code and this doc diverge, code wins.
+
+## Comparator output layout
+
+Per-site outputs are written to:
+
+```text
+data/comparator/<DD-MM-YYYY>/<run_id>/<site_id>/
+├── comparison_results.json
+└── diffs/                  # present only when changes are detected
+    ├── change_summary.json
+    ├── html_changes.json
+    ├── css_changes.json
+    ├── js_changes.json
+    └── visual_diff.png
 ```
-data/comparator/<DD-MM-YYYY>/<url_dir>/
-├── comparison_results.json     # always written, even on error or no-change
-└── diffs/                      # only created if changes are detected
-    ├── change_summary.json     # AI-facing master summary
-    ├── html_changes.json       # DOM diff details
-    ├── css_changes.json        # CSS file diff
-    ├── js_changes.json         # JS file diff
-    └── visual_diff.png         # SSIM-based visual diff (binary, not part of structured data)
-```
 
-If the comparator detects no changes (no visual diff, no DOM diff, no asset changes), `diffs/` is **not created**. The report layer's discovery code uses the presence of `diffs/` and the `changes_detected` field in `comparison_results.json` to decide whether AI analysis should be invoked.
+Notes:
 
----
+- `comparison_results.json` is always written (including comparator error cases).
+- `diffs/` is created only when the comparator reports `changes_detected=true`.
+- `site_id` is the stable id from `sites.yml` (`test_ui/common/sites.py`).
 
-## `comparison_results.json`
+## comparison_results.json
 
-Always written, regardless of outcome. The wrapper around per-URL state.
+Top-level wrapper for one site comparison.
 
 ```json
 {
   "metadata": {
     "timestamp": "30-04-2026 14:23:11",
     "url": "https://example.com/about",
-    "baseline_path": "/abs/path/to/data/baseline/30-04-2026",
-    "current_path": "/abs/path/to/data/current/30-04-2026",
-    "output_path": "/abs/path/to/data/comparator/30-04-2026/example.com_about"
+    "site_id": "12",
+    "baseline_path": "/abs/path/to/data/baseline/30-04-2026/01...",
+    "current_path": "/abs/path/to/data/current/30-04-2026/01...",
+    "output_path": "/abs/path/to/data/comparator/30-04-2026/01.../12"
   },
-  "result": { ... }   // see below
+  "result": {}
 }
 ```
 
-### `result` field - three shapes
+### result: error shape
 
-**Error case** (site missing from baseline or current):
+Used when the comparator cannot perform a valid comparison for the site.
 
 ```json
 {
   "url": "https://example.com/about",
-  "error": "missing_baseline",          // or "missing_current"
+  "error": "missing_baseline",
   "message": "Site not found in baseline"
 }
 ```
 
-**Success case** (full shape, derived from [`_compare_single_site`](../test_ui/comparator/engine.py#L1290) returning the dicts emitted by `_compare_dom`, `_compare_assets`, `_compare_screenshots`):
+Observed `error` values include:
+
+- `missing_baseline`
+- `missing_current`
+- `Comparison failed: ...` (unexpected comparator exception)
+
+### result: success shape
 
 ```json
 {
   "url": "https://example.com/about",
-  "changes_detected": true,
-  "diffs_created": true,
   "screenshot": {
     "ssim_score": 0.87,
     "visual_changes": true,
     "dimensions_changed": false,
     "diff_image_path": "/abs/path/.../diffs/visual_diff.png"
   },
+  "assets": {
+    "css": { "has_changes": true, "added": [], "removed": [], "changed": [] },
+    "js": { "has_changes": false, "added": [], "removed": [], "changed": [] },
+    "media": { "has_changes": false, "added": [], "removed": [], "changed": [] }
+  },
   "dom": {
     "title": { "baseline": "...", "current": "...", "changed": true },
-    "structure": {
-      "element_changes": [...],
-      "specific_changes": [...],
-      "tag_counts": { "baseline": {...}, "current": {...} }
-    },
-    "content": {
-      "baseline_length": 4521,
-      "current_length": 5832,
-      "length_change": 1311,
-      "significant_change": true
-    },
-    "meta": { "changes": [...] },
-    "navigation": { "changes": [...] },
+    "structure": { "element_changes": [], "specific_changes": [], "tag_counts": {} },
+    "content": { "baseline_length": 4521, "current_length": 5832, "length_change": 1311, "significant_change": true },
+    "meta": { "changes": [] },
+    "navigation": { "changes": [] },
+    "key_attributes": { "changes": [] },
+    "dynamic_attributes": { "changes": [] },
+    "headings": { "changes": [] },
     "has_changes": true
   },
-  "assets": {
-    "css":   { "added": [...], "removed": [...], "changed": [...], "has_changes": true, "total_changes": 2, "content_changes": [...], "detailed_analysis": {...} },
-    "js":    { "added": [], "removed": [], "changed": [], "has_changes": false, "total_changes": 0, "content_changes": [], "detailed_analysis": {} },
-    "media": { ...same shape... }
-  }
+  "changes_detected": true,
+  "diffs_created": true
 }
 ```
 
-Consumed by [`report/generator.py:42-54`](../test_ui/report/generator.py#L42-L54) - note the multi-signal change detection there, which OR-s `changes_detected` against several other fields. Phase A.3 should investigate why the top-level `changes_detected` flag isn't trusted on its own.
+Notes:
 
-> **⚠ Known comparator bug:** [`_create_change_summary_json`](../test_ui/comparator/engine.py#L1176-L1178) reads `dom_result.get("title_changed", False)`, `.get("content_changed", False)`, `.get("structure_changed", False)` - but `_compare_dom` doesn't emit those flat keys; it emits nested objects (`title.changed`, `content.significant_change`, etc.). So the `change_categories.content` block in every real `change_summary.json` always shows all-`False`. Out of scope for A.1; flagged for the comparator-side cleanup in A.3.
+- `changes_detected` is the report-discovery signal for changed URLs.
+- Comparator error payloads (`result.error`) are still routed to report processing so report output records the failure clearly.
 
----
+## change_summary.json
 
-## `change_summary.json`
-
-The master AI-facing summary. Used to drive prioritization in the Node prompt.
+High-level AI-facing rollup from `summary.create_change_summary_json()`.
 
 ```json
 {
   "overall_assessment": {
     "changes_detected": true,
-    "change_severity": "high",         // "none" | "low" | "medium" | "high"
-    "user_impact": "high",             // "none" | "low" | "medium" | "high"
+    "change_severity": "high",
+    "user_impact": "high",
     "requires_review": true
   },
   "change_categories": {
@@ -115,9 +132,13 @@ The master AI-facing summary. Used to drive prioritization in the Node prompt.
       "layout_shifts": false
     },
     "content": {
-      "title_changed": false,
+      "title_changed": true,
       "text_content_changed": true,
-      "structure_changed": true
+      "structure_changed": true,
+      "attribute_changes": 3,
+      "dynamic_attribute_changes": 1,
+      "heading_changes": 2,
+      "meta_changes": 1
     },
     "technical": {
       "html_changes": true,
@@ -126,24 +147,27 @@ The master AI-facing summary. Used to drive prioritization in the Node prompt.
       "asset_changes": false
     }
   },
-  "affected_components": ["visual_layout", "content", "structure", "styling"],
-  "recommendation": "Review visual changes in layout; Verify styling consistency",
+  "affected_components": [
+    "content",
+    "headings",
+    "links_and_navigation",
+    "styling",
+    "visual_layout"
+  ],
+  "recommendation": "Review visual changes in layout; Verify styling consistency; ...",
   "ai_analysis_priority": "high"
 }
 ```
 
-Severity assignment, from [`engine.py:1102-1128`](../test_ui/comparator/engine.py#L1102-L1128):
-- Visual: SSIM `< 0.8` → high; `< 0.95` → medium; else low.
-- CSS changes → medium contribution.
-- JS changes → high contribution.
-- HTML changes → low contribution (unless structural - but the structural distinction isn't captured at this level).
-- Overall = max of contributions, with `none` if no category fired.
+Key behavior:
 
----
+- Severity is rolled up from per-signal impacts (`none|low|medium|high`).
+- `affected_components` is sorted for deterministic output.
+- HTML-derived signals now include attribute and heading-level detail, not only title/content/structure booleans.
 
-## `html_changes.json`
+## html_changes.json
 
-Per-change records describing the DOM diff. **This is the file with per-change records and code snippets** - the most important file for AI prompt construction.
+Detailed DOM diff projection from `dom.create_html_changes_json()`.
 
 ```json
 {
@@ -151,85 +175,77 @@ Per-change records describing the DOM diff. **This is the file with per-change r
   "change_types": ["content", "structure", "attributes"],
   "changes": [
     {
-      "type": "content",                    // "content" | "structure" | "structure_detail" | "attributes"
+      "type": "content",
       "element": "title",
       "change": "text_modified",
       "description": "Page title changed",
       "old_value": "Welcome | Acme",
-      "new_value": "About Us | Acme",
-      "impact": "medium"                    // "low" | "medium" | "high"
-    },
-    {
-      "type": "structure",
-      "element": "div",
-      "change": "added_element",
-      "description": "Added 3 div element(s)",
-      "old_value": 12,
-      "new_value": 15,
-      "impact": "low",
-      "code_examples_count": 3              // only present on aggregate structure changes
+      "new_value": "About | Acme",
+      "impact": "medium"
     },
     {
       "type": "structure_detail",
       "element": "section.hero",
       "change": "element_added",
-      "description": "New hero section inserted before <main>",
-      "code_snippet": "<section class=\"hero\"><h1>About</h1><p>...</p></section>",
+      "description": "New hero section inserted",
+      "code_snippet": "<section class=\"hero\">...</section>",
       "position": "before:main",
       "impact": "high"
     },
     {
       "type": "attributes",
-      "element": "meta[viewport]",
-      "change": "meta_modified",
-      "description": "Meta tag 'viewport' modified",
-      "old_value": "width=device-width, initial-scale=1",
-      "new_value": "width=device-width, initial-scale=1.0, maximum-scale=1.0",
-      "impact": "low"
+      "element": "a[4].href",
+      "change": "attribute_modified",
+      "description": "Attribute a[4].href modified",
+      "old_value": "https://trusted.example",
+      "new_value": "https://attacker.example",
+      "impact": "high"
     }
   ],
   "summary": {
-    "total_changes": 4,
-    "structural_changes": 2,
+    "total_changes": 3,
+    "structural_changes": 0,
     "content_changes": 1,
     "meta_changes": 1,
     "navigation_changes": 0,
-    "high_impact_changes": 1,
+    "high_impact_changes": 2,
     "medium_impact_changes": 1,
     "severity": "high"
   }
 }
 ```
 
-### Important field contracts
+Notes:
 
-- **`changes` is a list of records.** Each has `type`, `element`, `change`, `description`, `impact`. Optional fields depend on the `type`.
-- **Per-change `impact`** is `"low" | "medium" | "high"` and is the natural prioritization key for prompt truncation (Phase A.1.4).
-- **`code_snippet`** is only present on `type: "structure_detail"` records. Length is bounded by an internal `_clean_html_snippet` cap (~300 chars in current code). Phase A.1.4's "max 2000 chars per snippet" cap is therefore non-binding on output today; the comparator already truncates more aggressively. Worth confirming when real data exists.
+- `changes[].type` values include `content`, `structure`, `structure_detail`, `attributes`.
+- `impact` uses `low|medium|high` and is used downstream in severity rollups.
+- `structure_detail` records can carry `code_snippet` and `position`.
 
----
+## css_changes.json
 
-## `css_changes.json`
+Projection from `assets.create_css_changes_json()`.
 
 ```json
 {
   "changes_detected": true,
   "change_types": ["layout", "styling"],
-  "files_changed": ["main.css", "theme.css"],
+  "files_changed": ["main.css"],
   "changes": [
     {
-      "file": "header.css",
-      "change_type": "added",        // "added" | "removed" | "modified"
-      "description": "New CSS file added: header.css",
-      "impact": "layout",            // always "layout" today
+      "file": "main.css",
+      "change_type": "modified",
+      "description": "CSS file modified: main.css",
+      "impact": "layout",
       "severity": "medium"
     },
     {
-      "file": "old-theme.css",
-      "change_type": "removed",
-      "description": "CSS file removed: old-theme.css",
-      "impact": "layout",
-      "severity": "high"
+      "file": "main.css",
+      "change_type": "selector_modified",
+      "description": "CSS selector .cta modified",
+      "selector": ".cta",
+      "impact": "high",
+      "property_changes": ["background-color", "color"],
+      "code_snippet": ".cta { ... }"
     }
   ],
   "summary": {
@@ -241,57 +257,60 @@ Per-change records describing the DOM diff. **This is the file with per-change r
 }
 ```
 
-> **Important limitation:** `css_changes.json` operates at the **file** level, not the rule/property level. There is no per-selector or per-property diff. The AI sees "main.css changed" but not "the `.btn-primary` background-color changed from blue to green." This is a known gap; the comparator's CSS analysis is shallow.
+Notes:
 
-## `js_changes.json`
+- Includes file-level records and selected per-rule content changes.
+- Per-rule entries are filtered/capped to avoid prompt bloat.
 
-Same structure as `css_changes.json` but with `functionality_impact` instead of CSS-specific fields:
+## js_changes.json
+
+Projection from `assets.create_js_changes_json()`.
 
 ```json
 {
-  "changes_detected": false,
-  "change_types": [],
-  "files_changed": [],
+  "changes_detected": true,
+  "change_types": ["functionality"],
+  "files_changed": ["app.js"],
   "changes": [
     {
-      "file": "analytics.js",
+      "file": "app.js",
       "change_type": "modified",
-      "description": "JavaScript file modified: analytics.js",
-      "functionality_impact": "medium"   // "low" | "medium" | "high"
+      "description": "JavaScript file modified: app.js",
+      "functionality_impact": "medium"
+    },
+    {
+      "file": "app.js",
+      "change_type": "function_modified",
+      "description": "js_function_modified handleSubmit",
+      "function_name": "handleSubmit",
+      "impact": "high",
+      "code_snippet": "function handleSubmit(...) { ... }"
     }
   ],
   "summary": {
-    "total_changes": 1,
-    "functionality_impact": "medium",
-    "severity": "medium"
+    "total_changes": 2,
+    "functionality_impact": "high",
+    "severity": "high"
   }
 }
 ```
 
-> Same file-level-only limitation as CSS: no per-function or per-symbol diff visible to the AI.
+Notes:
 
----
+- Includes file-level records and selected function/security-indicator records.
+- Function-level entries are filtered/capped and snippets truncated.
 
-## Prompt-design implications (driving Phase A.1.4)
+## Report-stage consumption notes
 
-Since `html_changes.json` is the only file with per-change records and code snippets, it's where prompt prioritization matters. Concrete rules for Phase A.1.4:
+- `report/discovery.py` buckets URLs by `result.changes_detected` and comparator error presence.
+- `report/loader.py` reads `diffs/*.json` into `structured_data` and attaches screenshots.
+- Missing/corrupt per-file diffs are represented as per-key error markers instead of aborting the whole URL.
 
-1. **Prioritize HTML changes by `impact`:** `high` → `medium` → `low`. Within a tier, preserve order (the comparator already groups title → element changes → specific structure → meta → navigation → content, which is roughly impact-descending).
-2. **Prioritize `type: "structure_detail"` over `type: "structure"`:** the `_detail` records carry actual code snippets; the aggregate records only carry counts.
-3. **CSS / JS payloads are small** (file-level only). Send all entries.
-4. **The 200-changes-per-category cap from the plan is conservative** for HTML and unused for CSS/JS at current data shapes. Worth measuring on real data.
+## Contract update checklist
 
-### What does NOT exist (model can't ask for it)
+When comparator output shape changes:
 
-- Per-CSS-rule diffs (which selectors / properties changed).
-- Per-JS-function diffs.
-- Pixel-level coordinates of visual differences (only an SSIM score and a diff image).
-- Cross-file dependency analysis ("this CSS change broke this HTML element").
-
-If the AI's analysis quality requires any of these, the comparator itself needs work - and that's outside Milestone A's non-goals. Document the gap, plan future work.
-
----
-
-## Realistic payload sizes
-
-**Cannot measure today** - no live data exists. Phase A.1.4's bounded defaults (30 MB body, 200 changes per category, 2000-char snippets) are sized for safety, not measurement. After the first real run produces output, this section should be updated with observed sizes for a representative spread of pages (small/medium/large).
+1. Update this doc (`docs/data_shapes.md`).
+2. Update affected report-loader and/or template assumptions.
+3. Update or regenerate fixtures and tests (`tests/test_comparator_*`, `tests/test_discovery.py`, `tests/test_report_*`).
+4. If AI request/response wire contracts changed, also regenerate schemas with `python scripts/export_schemas.py`.

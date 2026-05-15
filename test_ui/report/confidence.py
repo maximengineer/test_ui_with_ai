@@ -11,25 +11,28 @@ from __future__ import annotations
 
 from typing import Any
 
+from . import models
+
 
 def calculate_confidence_metrics(
-    all_url_results: list[dict[str, Any]],
+    all_url_results: list[models.URLResultInput],
 ) -> dict[str, Any]:
     """Aggregate per-URL confidence into composite + level + indicators + warnings."""
+    rows = models.coerce_result_views(all_url_results)
     confidence_scores: list[float] = []
     successful_analyses = 0
     data_quality_scores: list[float] = []
     analysis_completeness_scores: list[float] = []
 
-    for result in all_url_results:
-        ai_analysis = result.get("ai_analysis", {})
-        structured_data = result.get("structured_data", {})
+    for result in rows:
+        ai_analysis = result.ai_analysis
+        structured_data = result.structured_data
 
-        if result.get("processing_status") == "success":
+        if result.processing_status == "success":
             successful_analyses += 1
 
-            ai_confidence = ai_analysis.get("confidence_score", 0.0)
-            if isinstance(ai_confidence, (int, float)) and 0 <= ai_confidence <= 1:
+            ai_confidence = result.confidence_score
+            if ai_confidence is not None:
                 confidence_scores.append(ai_confidence)
 
             data_quality_scores.append(
@@ -62,11 +65,9 @@ def calculate_confidence_metrics(
         avg_ai_confidence,
         avg_data_quality,
         avg_analysis_completeness,
-        len(all_url_results),
+        len(rows),
     )
-    success_rate = (
-        successful_analyses / len(all_url_results) if all_url_results else 0.0
-    )
+    success_rate = successful_analyses / len(rows) if rows else 0.0
     confidence_level = _determine_confidence_level(
         composite_confidence, min_data_quality, success_rate
     )
@@ -85,15 +86,15 @@ def calculate_confidence_metrics(
         },
         "analysis_completeness": {"average": round(avg_analysis_completeness, 3)},
         "successful_analyses": successful_analyses,
-        "total_urls": len(all_url_results),
+        "total_urls": len(rows),
         "success_rate": round(success_rate, 3),
-        "quality_indicators": _generate_quality_indicators(all_url_results),
-        "validation_warnings": _generate_validation_warnings(all_url_results),
+        "quality_indicators": _generate_quality_indicators(rows),
+        "validation_warnings": _generate_validation_warnings(rows),
     }
 
 
 def _calculate_data_quality_score(
-    structured_data: dict[str, Any], result: dict[str, Any]
+    structured_data: dict[str, Any], result: models.URLResultView
 ) -> float:
     """Weighted composite: structured-data presence, screenshots, change detail, processing OK."""
     score = 0.0
@@ -106,7 +107,7 @@ def _calculate_data_quality_score(
     score += (present_keys / len(expected_keys)) * 0.4
 
     # Screenshot availability (30%)
-    screenshots_available = result.get("screenshots_available", [])
+    screenshots_available = result.screenshots_available
     expected_screenshots = ["baseline", "current", "visual_diff"]
     screenshot_score = sum(
         1 for shot in expected_screenshots if shot in screenshots_available
@@ -124,7 +125,7 @@ def _calculate_data_quality_score(
             score += (min(detailed_changes, 5) / 5) * 0.2
 
     # Processing status (10%)
-    if result.get("processing_status") == "success":
+    if result.processing_status == "success":
         score += 0.1
 
     return min(score, 1.0)
@@ -205,37 +206,34 @@ def _determine_confidence_level(
 
 
 def _generate_quality_indicators(
-    all_url_results: list[dict[str, Any]],
+    all_url_results: list[models.URLResultInput],
 ) -> dict[str, float]:
     """Per-URL coverage rates: data, screenshots, detailed analysis, errors."""
+    rows = models.coerce_result_views(all_url_results)
     indicators = {
         "data_completeness": 0.0,
         "screenshot_coverage": 0.0,
         "detailed_analysis_coverage": 0.0,
         "error_rate": 0.0,
     }
-    if not all_url_results:
+    if not rows:
         return indicators
 
-    total_urls = len(all_url_results)
+    total_urls = len(rows)
     complete_data_count = 0
     screenshot_coverage_count = 0
     detailed_analysis_count = 0
     error_count = 0
 
-    for result in all_url_results:
-        structured_data = result.get("structured_data", {})
-        if all(
-            key in structured_data
-            for key in ["html_changes", "css_changes", "js_changes"]
-        ):
+    for result in rows:
+        if result.has_required_structured_blocks:
             complete_data_count += 1
 
-        screenshots_available = result.get("screenshots_available", [])
+        screenshots_available = result.screenshots_available
         if len(screenshots_available) >= 2:  # baseline + current minimum
             screenshot_coverage_count += 1
 
-        detailed = result.get("ai_analysis", {}).get("detailed_analysis", {})
+        detailed = result.ai_analysis.get("detailed_analysis", {})
         if isinstance(detailed, dict) and any(
             isinstance(detailed.get(field, []), list)
             and len(detailed.get(field, [])) > 0
@@ -247,7 +245,7 @@ def _generate_quality_indicators(
         ):
             detailed_analysis_count += 1
 
-        if result.get("processing_status") == "error":
+        if result.processing_status == "error":
             error_count += 1
 
     indicators["data_completeness"] = round(complete_data_count / total_urls, 3)
@@ -260,17 +258,18 @@ def _generate_quality_indicators(
     return indicators
 
 
-def _generate_validation_warnings(all_url_results: list[dict[str, Any]]) -> list[str]:
+def _generate_validation_warnings(
+    all_url_results: list[models.URLResultInput],
+) -> list[str]:
     """Free-text warnings about high error rate, low confidence, missing screenshots, sparse data."""
+    rows = models.coerce_result_views(all_url_results)
     warnings: list[str] = []
-    if not all_url_results:
+    if not rows:
         warnings.append("No URL results available for validation")
         return warnings
 
-    total_urls = len(all_url_results)
-    error_count = sum(
-        1 for r in all_url_results if r.get("processing_status") == "error"
-    )
+    total_urls = len(rows)
+    error_count = sum(1 for r in rows if r.processing_status == "error")
     success_count = total_urls - error_count
 
     if error_count / total_urls > 0.2:
@@ -279,9 +278,9 @@ def _generate_validation_warnings(all_url_results: list[dict[str, Any]]) -> list
         )
 
     low_confidence_count = 0
-    for result in all_url_results:
-        confidence = result.get("ai_analysis", {}).get("confidence_score", 1.0)
-        if isinstance(confidence, (int, float)) and confidence < 0.6:
+    for result in rows:
+        confidence = result.confidence_score
+        if confidence is not None and confidence < 0.6:
             low_confidence_count += 1
 
     if low_confidence_count > 0 and success_count > 0:
@@ -291,21 +290,14 @@ def _generate_validation_warnings(all_url_results: list[dict[str, Any]]) -> list
                 "successful analyses"
             )
 
-    no_screenshot_count = sum(
-        1 for r in all_url_results if not r.get("screenshots_available")
-    )
+    no_screenshot_count = sum(1 for r in rows if not r.screenshots_available)
     if no_screenshot_count > 0:
         warnings.append(
             f"Missing screenshots for {no_screenshot_count}/{total_urls} URLs"
         )
 
     incomplete_data_count = sum(
-        1
-        for r in all_url_results
-        if not all(
-            key in r.get("structured_data", {})
-            for key in ("html_changes", "css_changes", "js_changes")
-        )
+        1 for r in rows if not r.has_required_structured_blocks
     )
     if incomplete_data_count > total_urls * 0.25:
         warnings.append(
