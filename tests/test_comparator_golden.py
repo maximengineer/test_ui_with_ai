@@ -230,3 +230,33 @@ def test_comparator_uses_site_id_for_dir_lookup(comparator_id_setup):
         / "diffs"
     )
     assert diffs_dir.exists(), f"no diffs/ found at {diffs_dir} - id-based dir not used"
+
+
+def test_compare_all_missing_run_dir_returns_typed_missing_errors(tmp_path, monkeypatch):
+    """If a resolved run directory is missing, comparator emits typed per-site
+    missing_* results instead of raising from Path.iterdir()."""
+    output_dir = tmp_path / "comparator_output"
+    output_dir.mkdir()
+    monkeypatch.setattr(settings, "comparator_dir", output_dir)
+
+    # Baseline root intentionally missing; current root present with one site.
+    baseline_dir = tmp_path / "baseline-missing"
+    current_dir = tmp_path / "current"
+    site_id = "site-1"
+    _seed_url_dir(
+        current_dir,
+        site_id,
+        "<html><head><title>x</title></head><body>x</body></html>",
+        (255, 255, 255),
+    )
+
+    engine = ComparatorEngine()
+    results = engine.compare_all(
+        baseline_dir,
+        current_dir,
+        [{"id": site_id, "url": "https://example.test"}],
+    )
+
+    assert len(results) == 1
+    result = results[0]["result"]
+    assert result["error"] == "missing_baseline"

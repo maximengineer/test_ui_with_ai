@@ -105,8 +105,8 @@ class ComparatorEngine:
             },
         )
 
-        baseline_sites = {d.name for d in baseline_dir.iterdir() if d.is_dir()}
-        current_sites = {d.name for d in current_dir.iterdir() if d.is_dir()}
+        baseline_sites = self._safe_site_dirs(baseline_dir, kind="baseline")
+        current_sites = self._safe_site_dirs(current_dir, kind="current")
 
         with run_context(
             date_dir,
@@ -136,6 +136,27 @@ class ComparatorEngine:
             f"({len(all_results)} URLs) → {date_dir / run_id}"
         )
         return all_results
+
+    @staticmethod
+    def _safe_site_dirs(root: Path, *, kind: str) -> set[str]:
+        """Return child directory names under `root`, or an empty set on failure.
+
+        Guardrail: if a resolved run directory disappears between precondition
+        checks and comparator execution (or is malformed), emit typed per-site
+        missing_baseline/missing_current results instead of raising from
+        Path.iterdir().
+        """
+        if not root.exists():
+            logger.error(f"{kind} run directory not found: {root}")
+            return set()
+        if not root.is_dir():
+            logger.error(f"{kind} run path is not a directory: {root}")
+            return set()
+        try:
+            return {d.name for d in root.iterdir() if d.is_dir()}
+        except OSError as e:
+            logger.error(f"Could not enumerate {kind} run directory {root}: {e}")
+            return set()
 
     def _compare_all_into(
         self,

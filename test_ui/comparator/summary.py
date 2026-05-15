@@ -192,6 +192,10 @@ def create_change_summary_json(
         severities.append("medium")
     if js_changes:
         severities.append("high")
+    if media_changes:
+        # Media files changing (images/video/audio) is user-visible and should
+        # require review even when CSS/JS/HTML are untouched.
+        severities.append("medium")
     if html_changes:
         severities.append(_html_severity_from_dom(dom_result))
 
@@ -215,6 +219,8 @@ def create_change_summary_json(
         affected_components.append("styling")
     if js_changes:
         affected_components.append("functionality")
+    if media_changes:
+        affected_components.append("media")
 
     recommendations: list[str] = []
     if visual_changes:
@@ -225,6 +231,8 @@ def create_change_summary_json(
         recommendations.append("Verify styling consistency")
     if html_changes:
         recommendations.extend(_html_recommendations(dom_result))
+    if media_changes:
+        recommendations.append("Review media asset changes")
     recommendation = (
         "; ".join(recommendations) if recommendations else "No changes detected"
     )
