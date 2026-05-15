@@ -7,7 +7,7 @@
  * detail panel). Without a selection: 2 columns. Without a run picked:
  * just the date+run picker on the left.
  */
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 
 import {
   reportScreenshotUrl,
@@ -36,30 +36,37 @@ const SEVERITY_STYLES: Record<string, string> = {
 
 export function ReportsPage() {
   const dates = useDates()
-  const reportDates = dates.data?.report ?? []
+  const reportDates = useMemo(() => dates.data?.report ?? [], [dates.data?.report])
   const [date, setDate] = useState<string | null>(null)
   const [runId, setRunId] = useState<string | null>(null)
   const [selectedUrlId, setSelectedUrlId] = useState<string | null>(null)
 
-  const runs = useReportRuns(date)
-  const summary = useReportSummary(date, runId)
-  const urls = useReportUrls(date, runId)
-
-  // When the date list arrives, default to the newest date so the page
-  // is useful immediately. Selecting a different date clears the run +
-  // URL selection so we don't render a mismatched detail panel.
-  useEffect(() => {
-    if (date === null && reportDates.length > 0) {
-      setDate(reportDates[0])
-    }
+  // Keep explicit selection when valid; otherwise default to newest date.
+  const selectedDate = useMemo(() => {
+    if (date && reportDates.includes(date)) return date
+    return reportDates[0] ?? null
   }, [date, reportDates])
 
-  // Once a date is picked, default-select its newest run.
-  useEffect(() => {
-    if (runs.data && runs.data.length > 0 && runId === null) {
-      setRunId(runs.data[0].run_id)
-    }
-  }, [runs.data, runId])
+  const runs = useReportRuns(selectedDate)
+
+  // Keep explicit run selection when valid; otherwise default to newest run.
+  const selectedRunId = useMemo(() => {
+    const items = runs.data ?? []
+    if (runId && items.some((r) => r.run_id === runId)) return runId
+    return items[0]?.run_id ?? null
+  }, [runId, runs.data])
+
+  const summary = useReportSummary(selectedDate, selectedRunId)
+  const urls = useReportUrls(selectedDate, selectedRunId)
+
+  // Avoid stale detail selection when switching date/run or after refresh.
+  const activeUrlId = useMemo(() => {
+    if (!selectedUrlId) return null
+    const items = urls.data?.items ?? []
+    return items.some((item) => item.url_id === selectedUrlId)
+      ? selectedUrlId
+      : null
+  }, [selectedUrlId, urls.data])
 
   return (
     <div className="flex h-full">
@@ -93,14 +100,14 @@ export function ReportsPage() {
                       setSelectedUrlId(null)
                     }}
                     className={`w-full rounded px-2 py-1 text-left font-mono text-xs ${
-                      date === d
+                      selectedDate === d
                         ? 'bg-slate-900 text-white'
                         : 'text-slate-700 hover:bg-slate-100'
                     }`}
                   >
                     {d}
                   </button>
-                  {date === d && runs.data && runs.data.length > 0 && (
+                  {selectedDate === d && runs.data && runs.data.length > 0 && (
                     <ul className="ml-2 mt-1 space-y-0.5 border-l border-slate-200 pl-2">
                       {runs.data.map((r) => (
                         <li key={r.run_id}>
@@ -110,7 +117,7 @@ export function ReportsPage() {
                               setSelectedUrlId(null)
                             }}
                             className={`w-full truncate rounded px-2 py-1 text-left font-mono text-[10px] ${
-                              runId === r.run_id
+                              selectedRunId === r.run_id
                                 ? 'bg-slate-200 text-slate-900'
                                 : 'text-slate-600 hover:bg-slate-50'
                             }`}
@@ -133,13 +140,13 @@ export function ReportsPage() {
           Each row is a short numeric URL id + a small status pill, so a
           tight column reads cleanly. Long site URLs already truncate
           with ellipsis in the secondary line. */}
-      {date && runId && (
+      {selectedDate && selectedRunId && (
         <div className="flex w-64 flex-col border-r border-slate-200 bg-white">
           <header className="border-b border-slate-200 px-4 py-3">
             <div className="text-xs uppercase tracking-wide text-slate-500">
               Run
             </div>
-            <div className="font-mono text-xs">{runId}</div>
+            <div className="font-mono text-xs">{selectedRunId}</div>
             {summary.data && (
               <div className="mt-2 flex flex-wrap gap-1 text-[10px]">
                 {Object.entries(summary.data.severity_counts).map(
@@ -168,7 +175,7 @@ export function ReportsPage() {
                   <UrlListItem
                     key={item.url_id}
                     item={item}
-                    selected={selectedUrlId === item.url_id}
+                    selected={activeUrlId === item.url_id}
                     onSelect={() => setSelectedUrlId(item.url_id)}
                   />
                 ))}
@@ -180,16 +187,16 @@ export function ReportsPage() {
 
       {/* --- Detail (per-URL drill-in) ----------------------------------- */}
       <div className="flex-1 overflow-auto bg-slate-50">
-        {date && runId && selectedUrlId ? (
+        {selectedDate && selectedRunId && activeUrlId ? (
           <UrlDetail
-            date={date}
-            runId={runId}
-            urlId={selectedUrlId}
+            date={selectedDate}
+            runId={selectedRunId}
+            urlId={activeUrlId}
             onClose={() => setSelectedUrlId(null)}
           />
         ) : (
           <div className="p-8 text-sm text-slate-500">
-            {date && runId
+            {selectedDate && selectedRunId
               ? 'Select a URL on the left to see its analysis.'
               : 'Pick a report on the left.'}
           </div>
