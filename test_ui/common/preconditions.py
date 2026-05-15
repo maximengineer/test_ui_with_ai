@@ -34,9 +34,8 @@ def require_complete_run(kind_root: Path, date: str, *, kind_label: str) -> Path
 
     Resolution order:
       1. Date dir missing → raise with "no runs found".
-      2. Legacy layout (no ULID subdirs) → trust on faith, return the date dir.
-      3. Newest ULID subdir with `status="complete"` → return it.
-      4. Otherwise → raise with the actual status of the newest run, so the
+      2. Newest ULID subdir with `status="complete"` → return it.
+      3. Otherwise → raise with the actual status of the newest run, so the
          operator gets a specific hint (re-run, wait, investigate) rather
          than a generic "no complete run".
 
@@ -65,10 +64,11 @@ def require_complete_run(kind_root: Path, date: str, *, kind_label: str) -> Path
     )
 
     if not ulid_dirs:
-        # Legacy layout - no run_ids at all. Trust the date dir directly so
-        # the migration grace period works. Operators on the new layout
-        # always have at least one ULID subdir (even if it's failed).
-        return date_dir
+        raise PreconditionFailed(
+            f"No complete {kind_label} run found for {date} in {date_dir}. "
+            "Legacy <date>/<url_dir> artifacts are not supported on read paths. "
+            "Run scripts/migrate_run_layout.py first."
+        )
 
     # Walk newest → oldest. Return the first complete one. Track the newest
     # non-complete status for the error message if we find no complete run.

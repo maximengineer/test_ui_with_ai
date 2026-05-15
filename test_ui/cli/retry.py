@@ -107,8 +107,7 @@ def retry_url(ctx, date, url, comparator_data):
     }
 
     # Each retry is its own report run. Source provenance points at the
-    # comparator run we just resolved (only when it's an actual run_id;
-    # legacy mode leaves source empty).
+    # comparator run we just resolved when it has a canonical run_id.
     source_run_ids: dict[str, str] = {}
     if is_valid_run_id(comparator_run_dir.name):
         source_run_ids["comparator"] = comparator_run_dir.name

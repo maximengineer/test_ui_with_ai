@@ -78,14 +78,17 @@ def test_require_complete_run_status_hint_in_error(tmp_path):
         require_complete_run(tmp_path, date, kind_label="baseline")
 
 
-def test_require_complete_run_legacy_layout_passes(tmp_path):
-    """Legacy date-only layout (no ULID subdir) is trusted on faith - the
-    migration grace period works without forcing a manifest into existence."""
+def test_require_complete_run_legacy_layout_raises_migration_hint(tmp_path):
+    """Legacy date-only layout (no ULID subdir) is rejected with a
+    migration hint."""
     date_dir = tmp_path / "01-01-2099"
     (date_dir / "example.com").mkdir(parents=True)  # url_dir, not run_id
 
-    result = require_complete_run(tmp_path, "01-01-2099", kind_label="baseline")
-    assert result == date_dir
+    with pytest.raises(
+        PreconditionFailed,
+        match="Legacy <date>/<url_dir> artifacts are not supported",
+    ):
+        require_complete_run(tmp_path, "01-01-2099", kind_label="baseline")
 
 
 # ---------------------------------------------------------------------------

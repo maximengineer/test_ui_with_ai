@@ -5,15 +5,13 @@ filesystem; no AI, no network.
 
 **Phase B.1:** drills through `<comparator_root>/<date>/<run_id>/` to find
 the latest complete comparator run, then iterates URL subfolders inside it.
-Falls back to the legacy `<comparator_root>/<date>/<url_dir>/` layout when
-no run_id subdir is present, so the report stage keeps working against
-pre-B.1 comparator output during the migration grace period.
+Legacy `<comparator_root>/<date>/<url_dir>/` layout is not supported.
 
 **A.3 simplification (multi-signal-detection):** trusts
-`result.changes_detected` as the single source of truth - the pre-A.3 code
-OR-ed it against five per-category flags but a trace of
-`comparator/engine.py:_compare_single_site` confirmed those are all
-`any(...)`-ed into the top-level field already.
+`result.changes_detected` as the single source of truth for successful
+comparator payloads. Exception: comparator error payloads (`result.error`)
+are routed to the "with_changes" bucket so the report stage emits an error
+marker, not a misleading `no_changes` marker.
 """
 
 from __future__ import annotations
@@ -36,9 +34,9 @@ def discover_comparison_data(
     missing comparison_results.json files are logged and skipped, not raised -
     one bad URL shouldn't kill the whole report.
 
-    Resolution: looks under `<comparator_root>/<date>/`, drills to the latest
-    complete `<run_id>` subdir if present (B.1 layout), or treats the date
-    dir itself as the run root (legacy fallback).
+    Resolution: looks under `<comparator_root>/<date>/` and drills to the
+    latest complete `<run_id>` subdir. If no complete run is found, returns
+    empty buckets.
     """
     run_root = find_latest_run_dir_in_date(comparator_root / date)
     if run_root is None:
@@ -64,8 +62,15 @@ def discover_comparison_data(
             logger.error(f"Error reading comparison data for {url_dir.name}: {e}")
             continue
 
-        if comparison_data.get("result", {}).get("changes_detected", False):
+        result_raw = comparison_data.get("result", {})
+        result = result_raw if isinstance(result_raw, dict) else {}
+        has_comparison_error = "error" in result
+        if result.get("changes_detected", False) or has_comparison_error:
             diffs_dir = url_dir / "diffs"
+            if has_comparison_error:
+                logger.warning(
+                    f"Comparator reported error for {url_dir.name}: {result.get('error')}"
+                )
             urls_with_changes.append(
                 {
                     "url_name": url_dir.name,

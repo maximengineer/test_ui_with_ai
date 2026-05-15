@@ -3,13 +3,11 @@
 Pure functions for resolving "the latest baseline / current / comparator /
 report directory I should read from."
 
-**Two layouts coexist during the migration grace period:**
+Expected layout:
 
-  - **NEW** (Phase B.1):  ``<root>/<DD-MM-YYYY>/<run_id>/<url_dir>/...``
-  - **LEGACY** (pre-B.1):  ``<root>/<DD-MM-YYYY>/<url_dir>/...``
+  ``<root>/<DD-MM-YYYY>/<run_id>/<url_dir>/...``
 
-`find_latest_run_dir` handles both transparently. It picks the latest valid
-date directory, then:
+`find_latest_run_dir` picks the latest valid date directory, then:
 
   1. If a `latest` symlink under that date dir resolves to a real subdir,
      return its target. (Fast path; the crawler updates the symlink at
@@ -17,10 +15,7 @@ date directory, then:
   2. Else, scan for ULID-named children - the new run-id subdirs. Sort
      descending (ULIDs are time-sortable), then walk newest→oldest until we
      find one whose `manifest.json` says ``status="complete"``.
-  3. Else, treat the date dir itself as the data root (legacy layout).
-
-Callers don't need to know which path was taken - they always treat the
-returned `Path` as "the directory containing per-URL subdirectories."
+If no complete run exists for the selected date, returns `None`.
 """
 
 from __future__ import annotations
@@ -53,8 +48,10 @@ def is_valid_date_dir(dirname: str) -> bool:
             and month.isdigit()
             and len(year) == 4
             and year.isdigit()
-            and 1 <= int(day) <= 31
-            and 1 <= int(month) <= 12
+            # Validate as a real calendar date (catches impossible dates
+            # like 31-02-2099 that used to pass shape checks and later crash
+            # parse_date_dir() during sorting).
+            and datetime(int(year), int(month), int(day)) is not None
         )
     except (ValueError, AttributeError):
         return False
@@ -124,10 +121,8 @@ def find_latest_run_dir_in_date(date_dir: Path) -> Path | None:
     Resolution order:
       1. `<date_dir>/latest` symlink → its target if it resolves to a real dir.
       2. Sort ULID-named subdirs descending, return first with complete manifest.
-      3. Legacy layout: no ULID subdirs → return `date_dir` itself (treat as
-         the run root). Caller has no way to verify completeness in this mode.
 
-    Returns None only if the date dir is gone or contains nothing usable.
+    Returns None if the date dir is gone or no complete run is discoverable.
     """
     if not date_dir.exists():
         return None
@@ -159,10 +154,9 @@ def find_latest_run_dir_in_date(date_dir: Path) -> Path | None:
         # half-finished one. Return None and let them complain.
         return None
 
-    # Legacy layout fallback: date dir holds url_dir subfolders directly.
-    # We can't verify completeness in this mode; trust on faith for the
-    # migration grace period, then drop this branch.
-    return date_dir
+    # No run-id subdirs found: legacy `<date>/<url_dir>/` layout is no longer
+    # supported on read paths. Migrate historical artifacts first.
+    return None
 
 
 def find_latest_run_dir(root_path: Path) -> Path | None:
@@ -216,9 +210,8 @@ def update_latest_symlink(date_dir: Path, run_id: str) -> None:
 # Convenience aliases mirroring the old ComparatorEngine API.
 # ---------------------------------------------------------------------------
 
-# These now resolve the run subdir, not the date dir, so the comparator gets
-# the run root directly. Legacy callers (the engine's classmethods) keep
-# their old names to avoid a flag-day rename.
+# These resolve run roots directly. The historical names stay to avoid a
+# flag-day rename at call sites.
 find_latest_baseline = find_latest_run_dir
 find_latest_current = find_latest_run_dir
 

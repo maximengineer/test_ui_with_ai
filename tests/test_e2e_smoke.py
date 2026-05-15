@@ -26,6 +26,8 @@ import httpx
 import pytest
 import respx
 
+from test_ui.common.manifest import Manifest, write_manifest
+from test_ui.common.run_id import new_run_id
 from test_ui.config import settings
 from test_ui.cli import _open_orchestrator
 
@@ -38,14 +40,30 @@ from test_ui.cli import _open_orchestrator
 def _seed_comparator_tree(
     comparator_root: Path, date: str, example_diffs_dir: Path
 ) -> dict[str, Path]:
-    """Lay out three URLs under `<comparator_root>/<date>/`:
+    """Lay out three URLs under canonical `<comparator_root>/<date>/<run_id>/`:
       - one with changes (will hit the mocked AI → analysis_success)
       - one with changes that will hit ai_disabled (when settings flips)
       - one without changes (NoChangesMarker path)
     Returns a dict: {url_name: dir}.
     """
-    base = comparator_root / date
+    run_id = new_run_id()
+    base = comparator_root / date / run_id
     base.mkdir(parents=True, exist_ok=True)
+    write_manifest(
+        base,
+        Manifest(
+            run_id=run_id,
+            kind="comparator",
+            started_at="01-01-2099 00:00:00",
+            finished_at="01-01-2099 00:00:01",
+            status="complete",
+            source_run_ids={
+                "baseline": "01HBASELINE0000000000000000",
+                "current": "01HCURRENT0000000000000000",
+            },
+            url_count=3,
+        ),
+    )
 
     def _with_changes(name: str) -> Path:
         url_dir = base / name

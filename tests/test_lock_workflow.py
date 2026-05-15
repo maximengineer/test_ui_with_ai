@@ -225,8 +225,7 @@ def test_enhanced_report_cli_handles_precondition_failed_cleanly(tmp_path, monke
 
     # Seed a comparator date with a single FAILED run - require_complete_run
     # will then raise with the failed-status hint. (An empty date dir would
-    # trigger the legacy fallback path instead and discovery's empty-buckets
-    # branch returns cleanly without firing the precondition.)
+    # just produce "no complete comparator run" and not exercise this branch.)
     comparator_dir = tmp_path / "comparator"
     failed_run = comparator_dir / "01-01-2099" / "01HXX0000000000000000000A0"
     failed_run.mkdir(parents=True)

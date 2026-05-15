@@ -52,6 +52,7 @@ class LockFile(BaseModel):
     started_at: str  # DD-MM-YYYY HH:MM:SS, settings.get_current_datetime()
     command: str  # the CLI invocation, e.g. "afr snapshot --output data/baseline"
     proc_starttime: int | None = None  # /proc/<pid>/stat field 22, Linux only
+    pid_starttime: int | None = None  # /proc/<pid>/stat field 22 for holder pid
 
 
 class LockHeldError(RuntimeError):
@@ -134,6 +135,45 @@ def is_pgid_alive(pgid: int, recorded_proc_starttime: int | None = None) -> bool
     return True
 
 
+def is_pid_alive(pid: int, recorded_proc_starttime: int | None = None) -> bool:
+    """Check whether a single process `pid` is alive.
+
+    Mirrors `is_pgid_alive` semantics but for one PID. Used as a fallback
+    when PGID probing is unreliable in some constrained runtimes.
+    """
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    except OSError:
+        return True
+
+    if recorded_proc_starttime is not None:
+        current = _read_proc_starttime(pid)
+        if current is not None and current != recorded_proc_starttime:
+            return False
+    return True
+
+
+def is_lock_alive(lock: LockFile) -> bool:
+    """True if lock holder appears alive by PGID or PID check.
+
+    Primary signal is PGID liveness (captures child processes in the same
+    process group). PID liveness is a conservative fallback for runtimes
+    where killpg probes can be unreliable.
+    """
+    if is_pgid_alive(lock.pgid, lock.proc_starttime):
+        return True
+    pid_start = lock.pid_starttime
+    if pid_start is None and lock.pid == lock.pgid:
+        # Back-compat: older lock files only had `proc_starttime`, which for
+        # pid==pgid is still valid PID start-time evidence.
+        pid_start = lock.proc_starttime
+    return is_pid_alive(lock.pid, pid_start)
+
+
 # ---------------------------------------------------------------------------
 # Lock acquire / release
 # ---------------------------------------------------------------------------
@@ -159,6 +199,7 @@ def _make_lock(command: str | None = None) -> LockFile:
         started_at=settings.get_current_datetime(),
         command=command if command is not None else " ".join(sys.argv),
         proc_starttime=_read_proc_starttime(pgid),
+        pid_starttime=_read_proc_starttime(pid),
     )
 
 
@@ -250,7 +291,7 @@ def find_live_lock_in_date(date_dir: Path) -> tuple[Path, LockFile] | None:
         lock = read_lock(tmp_dir)
         if lock is None:
             continue
-        if is_pgid_alive(lock.pgid, lock.proc_starttime):
+        if is_lock_alive(lock):
             return tmp_dir / LOCK_FILENAME, lock
         else:
             logger.warning(
@@ -265,6 +306,8 @@ __all__ = [
     "LockFile",
     "LockHeldError",
     "is_pgid_alive",
+    "is_pid_alive",
+    "is_lock_alive",
     "write_lock",
     "read_lock",
     "remove_lock",

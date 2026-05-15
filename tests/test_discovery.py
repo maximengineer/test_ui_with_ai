@@ -30,8 +30,30 @@ from test_ui.report.discovery import discover_comparison_data
 # ---------------------------------------------------------------------------
 
 
+def _seed_complete_run_root(
+    comparator_root: Path,
+    date: str,
+    *,
+    run_id: str = "01HXX0000000000000000000A0",
+) -> Path:
+    """Lay out a complete comparator run at `<root>/<date>/<run_id>/`."""
+    run_root = comparator_root / date / run_id
+    run_root.mkdir(parents=True, exist_ok=True)
+    write_manifest(
+        run_root,
+        Manifest(
+            run_id=run_id,
+            kind="comparator",
+            started_at="01-01-2099 00:00:00",
+            status="complete",
+            finished_at="01-01-2099 00:00:01",
+        ),
+    )
+    return run_root
+
+
 def _seed_url_dir(
-    date_root: Path,
+    run_root: Path,
     url_name: str,
     *,
     changes_detected: bool | None = None,
@@ -39,14 +61,14 @@ def _seed_url_dir(
     extra_result: dict | None = None,
     raw_json: str | None = None,
 ):
-    """Lay down `<date_root>/<url_name>/comparison_results.json`.
+    """Lay down `<run_root>/<url_name>/comparison_results.json`.
 
     `changes_detected=None` omits the field entirely (simulates pre-A.1
     output or error-path comparator results that have no `result` block).
     `raw_json` overrides the body completely - for malformed-JSON tests.
     `create_diffs_dir=False` skips creating the `diffs/` subdir.
     """
-    url_dir = date_root / url_name
+    url_dir = run_root / url_name
     url_dir.mkdir(parents=True)
     if create_diffs_dir:
         (url_dir / "diffs").mkdir()
@@ -93,6 +115,22 @@ def test_returns_empty_buckets_when_date_dir_empty(tmp_path):
     assert result == {"with_changes": [], "without_changes": []}
 
 
+def test_returns_empty_buckets_for_legacy_date_root_layout(tmp_path):
+    """Legacy `<date>/<url_dir>` trees are no longer read by discovery."""
+    date = "01-01-2099"
+    legacy_url_dir = tmp_path / date / "example.com"
+    legacy_url_dir.mkdir(parents=True)
+    (legacy_url_dir / "comparison_results.json").write_text(
+        json.dumps(
+            {"metadata": {"url": "https://example.com"}, "result": {"changes_detected": True}}
+        ),
+        encoding="utf-8",
+    )
+
+    result = discover_comparison_data(tmp_path, date)
+    assert result == {"with_changes": [], "without_changes": []}
+
+
 # ---------------------------------------------------------------------------
 # Bucketing - the post-A.3 single-source-of-truth check
 # ---------------------------------------------------------------------------
@@ -100,8 +138,8 @@ def test_returns_empty_buckets_when_date_dir_empty(tmp_path):
 
 def test_changes_detected_true_lands_in_with_changes(tmp_path):
     date = "02-05-2026"
-    date_root = tmp_path / date
-    _seed_url_dir(date_root, "site_a", changes_detected=True)
+    run_root = _seed_complete_run_root(tmp_path, date)
+    _seed_url_dir(run_root, "site_a", changes_detected=True)
 
     result = discover_comparison_data(tmp_path, date)
 
@@ -110,14 +148,14 @@ def test_changes_detected_true_lands_in_with_changes(tmp_path):
     entry = result["with_changes"][0]
     assert entry["url_name"] == "site_a"
     assert entry["has_changes"] is True
-    assert entry["url_dir"] == date_root / "site_a"
-    assert entry["structured_data_path"] == date_root / "site_a" / "diffs"
+    assert entry["url_dir"] == run_root / "site_a"
+    assert entry["structured_data_path"] == run_root / "site_a" / "diffs"
 
 
 def test_changes_detected_false_lands_in_without_changes(tmp_path):
     date = "02-05-2026"
-    date_root = tmp_path / date
-    _seed_url_dir(date_root, "site_b", changes_detected=False)
+    run_root = _seed_complete_run_root(tmp_path, date)
+    _seed_url_dir(run_root, "site_b", changes_detected=False)
 
     result = discover_comparison_data(tmp_path, date)
 
@@ -138,9 +176,9 @@ def test_only_top_level_changes_detected_is_consulted(tmp_path):
     the OR, this test fails.
     """
     date = "02-05-2026"
-    date_root = tmp_path / date
+    run_root = _seed_complete_run_root(tmp_path, date)
     _seed_url_dir(
-        date_root,
+        run_root,
         "trick",
         changes_detected=False,
         # All these per-category flags would have flipped the pre-A.3 OR check.
@@ -161,19 +199,41 @@ def test_only_top_level_changes_detected_is_consulted(tmp_path):
 
 def test_missing_changes_detected_field_treated_as_false(tmp_path):
     """Error-path comparator results have no `result.changes_detected` - they
-    must land in without_changes (which is the pre-A.3 behavior preserved)."""
+    must land in without_changes."""
     date = "02-05-2026"
-    date_root = tmp_path / date
+    run_root = _seed_complete_run_root(tmp_path, date)
     _seed_url_dir(
-        date_root,
+        run_root,
         "errored",
         changes_detected=None,
-        extra_result={"error": "missing_baseline"},
     )
 
     result = discover_comparison_data(tmp_path, date)
     assert len(result["without_changes"]) == 1
     assert result["with_changes"] == []
+
+
+def test_comparator_error_result_is_not_treated_as_no_changes(tmp_path):
+    """Comparator error payloads must not flow to the no_changes path.
+
+    Discovery routes them into `with_changes` so report generation emits an
+    error marker instead of a misleading no_changes marker.
+    """
+    date = "02-05-2026"
+    run_root = _seed_complete_run_root(tmp_path, date)
+    _seed_url_dir(
+        run_root,
+        "site_error",
+        changes_detected=None,
+        extra_result={"error": "missing_baseline"},
+        create_diffs_dir=False,
+    )
+
+    result = discover_comparison_data(tmp_path, date)
+    assert len(result["with_changes"]) == 1
+    assert result["with_changes"][0]["url_name"] == "site_error"
+    assert result["with_changes"][0]["structured_data_path"] is None
+    assert result["without_changes"] == []
 
 
 # ---------------------------------------------------------------------------
@@ -186,8 +246,8 @@ def test_structured_data_path_none_when_diffs_dir_missing(tmp_path):
     report stage uses None as a sentinel that there's no per-category data
     to load (vs. an empty dict, which would break downstream)."""
     date = "02-05-2026"
-    date_root = tmp_path / date
-    _seed_url_dir(date_root, "no_diffs", changes_detected=True, create_diffs_dir=False)
+    run_root = _seed_complete_run_root(tmp_path, date)
+    _seed_url_dir(run_root, "no_diffs", changes_detected=True, create_diffs_dir=False)
 
     result = discover_comparison_data(tmp_path, date)
     assert result["with_changes"][0]["structured_data_path"] is None
@@ -195,12 +255,12 @@ def test_structured_data_path_none_when_diffs_dir_missing(tmp_path):
 
 def test_structured_data_path_set_when_diffs_dir_exists(tmp_path):
     date = "02-05-2026"
-    date_root = tmp_path / date
-    _seed_url_dir(date_root, "with_diffs", changes_detected=True, create_diffs_dir=True)
+    run_root = _seed_complete_run_root(tmp_path, date)
+    _seed_url_dir(run_root, "with_diffs", changes_detected=True, create_diffs_dir=True)
 
     result = discover_comparison_data(tmp_path, date)
     p = result["with_changes"][0]["structured_data_path"]
-    assert p == date_root / "with_diffs" / "diffs"
+    assert p == run_root / "with_diffs" / "diffs"
     assert p.exists() and p.is_dir()
 
 
@@ -216,9 +276,8 @@ def test_skips_url_dirs_without_comparison_results_json(tmp_path, caplog):
     want the report stage to crash because one URL is in a bad state.
     """
     date = "02-05-2026"
-    date_root = tmp_path / date
-    date_root.mkdir()
-    (date_root / "incomplete").mkdir()  # url dir but no results file
+    run_root = _seed_complete_run_root(tmp_path, date)
+    (run_root / "incomplete").mkdir()  # url dir but no results file
 
     result = discover_comparison_data(tmp_path, date)
     assert result == {"with_changes": [], "without_changes": []}
@@ -226,9 +285,9 @@ def test_skips_url_dirs_without_comparison_results_json(tmp_path, caplog):
 
 def test_skips_malformed_json_and_logs_error(tmp_path):
     date = "02-05-2026"
-    date_root = tmp_path / date
-    _seed_url_dir(date_root, "broken", raw_json="{not valid json")
-    _seed_url_dir(date_root, "good", changes_detected=True)
+    run_root = _seed_complete_run_root(tmp_path, date)
+    _seed_url_dir(run_root, "broken", raw_json="{not valid json")
+    _seed_url_dir(run_root, "good", changes_detected=True)
 
     result = discover_comparison_data(tmp_path, date)
 
@@ -238,12 +297,11 @@ def test_skips_malformed_json_and_logs_error(tmp_path):
 
 
 def test_ignores_non_directory_entries_in_date_dir(tmp_path):
-    """Files at the date level (e.g. a stray .DS_Store) must not break iteration."""
+    """Files at run-root level (e.g. a stray .DS_Store) must not break iteration."""
     date = "02-05-2026"
-    date_root = tmp_path / date
-    date_root.mkdir()
-    (date_root / ".DS_Store").write_text("not a dir")
-    _seed_url_dir(date_root, "real_url", changes_detected=True)
+    run_root = _seed_complete_run_root(tmp_path, date)
+    (run_root / ".DS_Store").write_text("not a dir")
+    _seed_url_dir(run_root, "real_url", changes_detected=True)
 
     result = discover_comparison_data(tmp_path, date)
     assert len(result["with_changes"]) == 1
@@ -258,15 +316,15 @@ def test_ignores_non_directory_entries_in_date_dir(tmp_path):
 def test_buckets_mixed_urls_correctly(tmp_path):
     """Mixed input: some changed, some unchanged, one missing JSON, one malformed."""
     date = "02-05-2026"
-    date_root = tmp_path / date
+    run_root = _seed_complete_run_root(tmp_path, date)
 
-    _seed_url_dir(date_root, "changed_a", changes_detected=True)
-    _seed_url_dir(date_root, "changed_b", changes_detected=True)
-    _seed_url_dir(date_root, "unchanged_a", changes_detected=False)
-    _seed_url_dir(date_root, "unchanged_b", changes_detected=False)
-    _seed_url_dir(date_root, "broken", raw_json="garbage")
+    _seed_url_dir(run_root, "changed_a", changes_detected=True)
+    _seed_url_dir(run_root, "changed_b", changes_detected=True)
+    _seed_url_dir(run_root, "unchanged_a", changes_detected=False)
+    _seed_url_dir(run_root, "unchanged_b", changes_detected=False)
+    _seed_url_dir(run_root, "broken", raw_json="garbage")
     # URL dir with no results file at all:
-    (date_root / "missing_results").mkdir()
+    (run_root / "missing_results").mkdir()
 
     result = discover_comparison_data(tmp_path, date)
 
@@ -280,9 +338,9 @@ def test_returned_entries_carry_full_comparison_data(tmp_path):
     """Each bucketed entry includes the parsed comparison_data dict - the
     report stage uses it for screenshot path resolution etc."""
     date = "02-05-2026"
-    date_root = tmp_path / date
+    run_root = _seed_complete_run_root(tmp_path, date)
     _seed_url_dir(
-        date_root,
+        run_root,
         "site",
         changes_detected=True,
         extra_result={"screenshot": {"diff_image_path": "/tmp/diff.png"}},

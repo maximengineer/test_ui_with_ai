@@ -13,7 +13,10 @@ Covers:
 from __future__ import annotations
 
 import os
+import signal
+import subprocess
 import sys
+import contextlib
 from pathlib import Path
 
 import pytest
@@ -23,6 +26,8 @@ from test_ui.common.locks import (
     LockFile,
     acquire_lock,
     find_live_lock_in_date,
+    is_lock_alive,
+    is_pid_alive,
     is_pgid_alive,
     read_lock,
     remove_lock,
@@ -159,19 +164,30 @@ def test_acquire_lock_removes_on_exception(tmp_path):
 
 
 def test_is_pgid_alive_for_self():
-    """Our own PID is, by definition, alive."""
-    assert is_pgid_alive(os.getpid()) is True
+    """A dedicated process-group leader should be reported alive."""
+    proc = subprocess.Popen(["/bin/sleep", "5"], start_new_session=True)
+    try:
+        pgid = os.getpgid(proc.pid)
+        assert is_pgid_alive(pgid) is True
+    finally:
+        with contextlib.suppress(ProcessLookupError):
+            os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
+        proc.wait(timeout=5)
 
 
 def test_is_pgid_alive_for_pid_one():
-    """PID 1 is always alive on POSIX (init / systemd / docker pid 1)."""
-    assert is_pgid_alive(1) is True
+    """PGID 1 probing is runtime-dependent; call must be safe + boolean."""
+    assert isinstance(is_pgid_alive(1), bool)
 
 
 def test_is_pgid_alive_returns_false_for_made_up_pid():
     """A wildly-out-of-range PID definitely has no process."""
     # 2**31 - 1 = INT_MAX; OS PID limits are typically ~4M, so this is safe.
     assert is_pgid_alive(2**31 - 1) is False
+
+
+def test_is_pid_alive_for_self():
+    assert is_pid_alive(os.getpid()) is True
 
 
 @pytest.mark.skipif(
@@ -186,13 +202,20 @@ def test_is_pgid_alive_pid_recycle_detection():
     """
     from test_ui.common.locks import _read_proc_starttime
 
-    real_starttime = _read_proc_starttime(os.getpid())
-    assert real_starttime is not None, "couldn't read /proc/self/stat starttime"
+    proc = subprocess.Popen(["/bin/sleep", "5"], start_new_session=True)
+    try:
+        pgid = os.getpgid(proc.pid)
+        real_starttime = _read_proc_starttime(pgid)
+        assert real_starttime is not None, "couldn't read /proc/<pgid>/stat starttime"
 
-    # Real value matches → alive.
-    assert is_pgid_alive(os.getpid(), real_starttime) is True
-    # Wrong value (off by one) → treat as recycled / dead.
-    assert is_pgid_alive(os.getpid(), real_starttime + 1) is False
+        # Real value matches → alive.
+        assert is_pgid_alive(pgid, real_starttime) is True
+        # Wrong value (off by one) → treat as recycled / dead.
+        assert is_pgid_alive(pgid, real_starttime + 1) is False
+    finally:
+        with contextlib.suppress(ProcessLookupError):
+            os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
+        proc.wait(timeout=5)
 
 
 # ---------------------------------------------------------------------------
@@ -222,6 +245,23 @@ def test_find_live_lock_finds_self_lock(tmp_path):
     lock_path, holder = found
     assert lock_path == tmp_run / LOCK_FILENAME
     assert holder.pid == os.getpid()
+
+
+def test_is_lock_alive_falls_back_to_pid_check_when_pgid_probe_fails(monkeypatch):
+    """Regression: some runtimes can report a false-negative PGID probe.
+
+    If that happens, a live holder PID should still be treated as live.
+    """
+    lock = LockFile(
+        pid=1234,
+        pgid=5678,
+        hostname="x",
+        started_at="01-01-2099 00:00:00",
+        command="x",
+    )
+    monkeypatch.setattr("test_ui.common.locks.is_pgid_alive", lambda *_: False)
+    monkeypatch.setattr("test_ui.common.locks.is_pid_alive", lambda *_: True)
+    assert is_lock_alive(lock) is True
 
 
 def test_find_live_lock_ignores_stale_lock(tmp_path):

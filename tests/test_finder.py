@@ -1,16 +1,15 @@
-"""Finder + run-id resolution tests (Phase B.1).
+"""Finder + run-id resolution tests (Phase B.1+Phase 7).
 
-Covers `comparator/finder.py`'s new run-aware lookup AND the legacy
-fallback. Critical because every read-side consumer (comparator, report)
-flows through these functions; a bug here silently picks the wrong data
-to compare/report on.
+Covers `comparator/finder.py`'s run-aware lookup. Critical because every
+read-side consumer (comparator, report) flows through these functions; a
+bug here silently picks the wrong data to compare/report on.
 
 Specifically pins:
   - Latest date dir wins (calendar order, not mtime order).
   - Within a date dir, latest *complete* run wins (ULID-sortable, manifest-checked).
   - Runs with status="running"/"failed" are skipped.
   - The `latest` symlink shortcut is preferred over scanning.
-  - Legacy layout (no run_id subdirs) is transparently supported.
+  - Legacy layout (no run_id subdirs) is rejected.
   - update_latest_symlink is atomic (no torn state if interrupted).
 """
 
@@ -62,6 +61,8 @@ def _make_run(
         ("1-1-2099", False),  # missing zero-padding
         ("00-13-2099", False),  # invalid month
         ("32-01-2099", False),  # invalid day
+        ("31-02-2099", False),  # impossible calendar date
+        ("29-02-2025", False),  # non-leap-year Feb 29
         ("01-01-99", False),  # 2-digit year
         ("not-a-date", False),
         ("", False),
@@ -93,6 +94,14 @@ def test_find_latest_date_dir_ignores_non_date_dirs(tmp_path):
     (tmp_path / "scratch").mkdir()
     (tmp_path / ".git").mkdir()
     assert finder.find_latest_date_dir(tmp_path).name == "01-01-2099"
+
+
+def test_find_latest_date_dir_ignores_impossible_dates(tmp_path):
+    """Directories with DD-MM-YYYY shape but impossible calendar dates
+    are ignored instead of crashing date parsing during sort."""
+    (tmp_path / "31-02-2099").mkdir()
+    (tmp_path / "01-02-2099").mkdir()
+    assert finder.find_latest_date_dir(tmp_path).name == "01-02-2099"
 
 
 # ---------------------------------------------------------------------------
@@ -153,16 +162,15 @@ def test_returns_none_when_no_complete_run_in_new_layout(tmp_path):
     assert finder.find_latest_run_dir_in_date(date_dir) is None
 
 
-def test_legacy_fallback_when_no_run_id_subdirs(tmp_path):
-    """Pre-B.1 layout: date_dir contains url_dir subfolders directly. Return
-    the date_dir itself so legacy callers keep working during migration grace."""
+def test_returns_none_when_no_run_id_subdirs(tmp_path):
+    """Legacy `<date>/<url_dir>` trees are not valid run roots anymore."""
     date_dir = tmp_path / "01-01-2099"
     date_dir.mkdir()
     (date_dir / "example.com").mkdir()  # url_dir, not a run_id
     (date_dir / "example.org").mkdir()
 
     result = finder.find_latest_run_dir_in_date(date_dir)
-    assert result == date_dir
+    assert result is None
 
 
 def test_legacy_fallback_skipped_if_any_run_id_present(tmp_path):
@@ -287,14 +295,14 @@ def test_find_latest_run_dir_drills_through_latest_date(tmp_path):
     assert result.name == expected
 
 
-def test_find_latest_run_dir_legacy_only_root(tmp_path):
-    """No new-layout runs anywhere - legacy fallback returns the date dir itself."""
+def test_find_latest_run_dir_legacy_only_root_returns_none(tmp_path):
+    """No complete run dirs anywhere -> no discoverable run root."""
     date_dir = tmp_path / "01-01-2099"
     date_dir.mkdir()
     (date_dir / "example.com").mkdir()  # url_dir, not a run_id
 
     result = finder.find_latest_run_dir(tmp_path)
-    assert result == date_dir
+    assert result is None
 
 
 # ---------------------------------------------------------------------------
