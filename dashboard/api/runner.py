@@ -38,6 +38,7 @@ import os
 import signal
 import sys
 import time
+from importlib.resources import files
 from pathlib import Path
 from typing import Callable
 
@@ -236,19 +237,32 @@ def _resolve_sites_file() -> Path:
     """Locate `test_ui/sites.yml` for the spawned subprocess.
 
     The CLI's `--sites-file` defaults to `./sites.yml`, but the dashboard
-    is typically launched from a different cwd. Resolving the bundled
-    `test_ui/sites.yml` via the test_ui module's __file__ works under
-    both source-tree and editable-install layouts.
+    is typically launched from a different cwd. We persist the bundled
+    resource to `settings.data_root/.cache/sites.yml` and return that
+    stable on-disk path. This works in source-tree, editable install,
+    and zipped-wheel contexts.
 
-    TODO(packaging): for a future zipped-wheel deployment, switch to
-    extracting the bundled YAML to `settings.data_root / ".cache" /
-    "sites.yml"` once at dashboard startup, then pass that cached path
-    to subprocesses. The spawned subprocess can't share an
-    `importlib.resources.as_file` context across its own lifetime.
+    If cache write fails (permissions, read-only FS), we log + fall back
+    to the package-adjacent path as a best effort.
     """
-    import test_ui as _test_ui_pkg
+    resource = files("test_ui") / "sites.yml"
+    sites_bytes = resource.read_bytes()
 
-    return Path(_test_ui_pkg.__file__).parent / "sites.yml"
+    cache_dir = settings.data_root / ".cache"
+    cache_path = cache_dir / "sites.yml"
+    try:
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        if not cache_path.exists() or cache_path.read_bytes() != sites_bytes:
+            cache_path.write_bytes(sites_bytes)
+        return cache_path
+    except OSError as e:
+        logger.warning(
+            f"runner: failed to refresh cached sites.yml at {cache_path}: "
+            f"{type(e).__name__}: {e}; falling back to package path"
+        )
+        import test_ui as _test_ui_pkg
+
+        return Path(_test_ui_pkg.__file__).parent / "sites.yml"
 
 
 def _build_command(

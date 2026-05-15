@@ -63,7 +63,7 @@ def _client_with(db_path: Path):
 
     app.dependency_overrides[get_db] = _override_get_db
     try:
-        with TestClient(app) as c:
+        with TestClient(app, backend_options={"use_uvloop": True}) as c:
             yield c
     finally:
         app.dependency_overrides.clear()

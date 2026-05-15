@@ -18,7 +18,29 @@ imports from the package would pull `main.py` (and its full router
 graph) into the dependency cycle - a circular-import waiting to happen.
 """
 
-from .main import app
+from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from fastapi import FastAPI
+
+
+def __getattr__(name: str):
+    """Lazy-export `app` so package import stays side-effect-light.
+
+    `from dashboard.api import db` should not bootstrap FastAPI (which mounts
+    SPA assets and emits logs). Uvicorn's `dashboard.api:app` access still
+    works because attribute lookup triggers this hook.
+    """
+    if name == "app":
+        from .main import app
+
+        return app
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+
+if TYPE_CHECKING:
+    app: FastAPI
 
 __all__ = ["app"]

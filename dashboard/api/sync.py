@@ -33,6 +33,7 @@ from test_ui.common.run_id import is_valid_run_id
 from test_ui.config import settings
 
 from .db import insert_discovered_run
+from .lifecycle import manifest_status_to_run_status
 
 
 def _kind_root(kind: str) -> Path:
@@ -106,11 +107,10 @@ def _scan_kind(kind: str) -> list[tuple[str, Path]]:
 def _manifest_status_to_run_status(manifest_status: str) -> str:
     """Translate manifest vocabulary → dashboard vocabulary.
 
-    Only `complete → done` actually changes; the others are passthrough.
-    Centralizing the map (vs. inlining a string compare) makes future
-    additions to either vocabulary obvious to find.
+    Wrapper kept for backward-compatibility with tests/importers. Canonical
+    mapping now lives in `dashboard.api.lifecycle`.
     """
-    return "done" if manifest_status == "complete" else manifest_status
+    return manifest_status_to_run_status(manifest_status)
 
 
 def sync_runs(conn: sqlite3.Connection) -> tuple[int, int]:

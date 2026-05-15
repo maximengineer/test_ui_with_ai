@@ -19,7 +19,11 @@ import pytest
 from typing import get_args
 
 from dashboard.api import db as dbmod
-from dashboard.api.sync import _manifest_status_to_run_status
+from dashboard.api.lifecycle import (
+    can_transition,
+    manifest_status_to_run_status,
+    transition_sources_for,
+)
 from test_ui.common.manifest import Kind as ManifestKind
 from test_ui.common.manifest import Status as ManifestStatus
 
@@ -41,18 +45,51 @@ def test_status_mapping_is_exhaustive_for_every_manifest_status():
     constraint will accept.
 
     Pre-fix this had no test: if someone added a new manifest status
-    (e.g. `paused`), `_manifest_status_to_run_status` would pass it
-    through unchanged, the INSERT would fail the CHECK constraint at
-    runtime, and the operator would see a confusing IntegrityError in
-    production sync logs. Pin the round-trip explicitly.
+    (e.g. `paused`) and forgot to update the mapping, sync would fail at
+    INSERT-time with a confusing CHECK-constraint IntegrityError. Pin the
+    mapping exhaustiveness explicitly.
     """
     for ms in get_args(ManifestStatus):
-        mapped = _manifest_status_to_run_status(ms)
+        mapped = manifest_status_to_run_status(ms)
         assert mapped in dbmod.RUN_STATUSES_TUPLE, (
             f"manifest status {ms!r} maps to {mapped!r}, which is not in "
             f"RUN_STATUSES_TUPLE={dbmod.RUN_STATUSES_TUPLE}. "
-            "Update _manifest_status_to_run_status or RUN_STATUSES_TUPLE."
+            "Update manifest_status_to_run_status or RUN_STATUSES_TUPLE."
         )
+
+
+def test_manifest_status_mapping_is_exact():
+    """Pin exact manifest -> dashboard mapping (not just set membership)."""
+    assert manifest_status_to_run_status("complete") == "done"
+    assert manifest_status_to_run_status("running") == "running"
+    assert manifest_status_to_run_status("failed") == "failed"
+    assert manifest_status_to_run_status("interrupted") == "interrupted"
+
+
+def test_manifest_status_mapping_rejects_unknown_status():
+    with pytest.raises(ValueError, match="unknown manifest status"):
+        manifest_status_to_run_status("paused")
+
+
+def test_transition_matrix_invariants():
+    """Lifecycle matrix pins:
+    - pending -> running/terminal
+    - running -> terminal
+    - terminal -> no outgoing transitions
+    """
+    assert can_transition("pending", "running")
+    assert can_transition("pending", "done")
+    assert can_transition("pending", "failed")
+    assert can_transition("pending", "interrupted")
+
+    assert can_transition("running", "done")
+    assert can_transition("running", "failed")
+    assert can_transition("running", "interrupted")
+    assert not can_transition("running", "pending")
+
+    for terminal in ("done", "failed", "interrupted"):
+        assert transition_sources_for(terminal) == ("pending", "running")
+        assert not can_transition(terminal, "running")
 
 
 def test_fresh_db_has_user_version_zero(tmp_path):
@@ -293,6 +330,90 @@ def test_set_user_version_rejects_negative(tmp_path):
             dbmod.set_user_version(conn, -1)
 
 
+def test_mark_terminal_allows_pending_running_and_blocks_terminal_overwrite(tmp_path):
+    """Terminal transitions are one-way:
+    pending/running -> terminal is allowed; terminal -> terminal is blocked.
+    """
+    db_path = tmp_path / "terminal.db"
+    dbmod.init_db(db_path)
+    with dbmod.connection_scope(db_path) as conn:
+        pending_id = dbmod.insert_pending_run(
+            conn,
+            run_id="pending-row",
+            kind="baseline",
+            args={},
+            command=[],
+            date_dir="01-01-2099",
+            created_at="01-01-2099 00:00:00",
+        )
+        assert dbmod.mark_terminal(
+            conn,
+            db_id=pending_id,
+            status="done",
+            finished_at="01-01-2099 00:00:01",
+            exit_code=0,
+        )
+        # Already terminal: must not be overwritten by another terminal state.
+        assert not dbmod.mark_terminal(
+            conn,
+            db_id=pending_id,
+            status="failed",
+            finished_at="01-01-2099 00:00:02",
+            exit_code=1,
+            error="should not overwrite done",
+        )
+
+        running_id = dbmod.insert_pending_run(
+            conn,
+            run_id="running-row",
+            kind="current",
+            args={},
+            command=[],
+            date_dir="01-01-2099",
+            created_at="01-01-2099 00:00:10",
+        )
+        promoted = dbmod.mark_running(
+            conn,
+            db_id=running_id,
+            pid=1234,
+            pgid=1234,
+            pid_start_time="42",
+            started_at="01-01-2099 00:00:11",
+        )
+        assert promoted
+        assert dbmod.mark_terminal(
+            conn,
+            db_id=running_id,
+            status="interrupted",
+            finished_at="01-01-2099 00:00:12",
+            exit_code=-15,
+            error="killed by signal 15",
+        )
+
+
+def test_mark_terminal_rejects_non_terminal_status(tmp_path):
+    db_path = tmp_path / "bad-terminal.db"
+    dbmod.init_db(db_path)
+    with dbmod.connection_scope(db_path) as conn:
+        db_id = dbmod.insert_pending_run(
+            conn,
+            run_id="bad-terminal-row",
+            kind="baseline",
+            args={},
+            command=[],
+            date_dir="01-01-2099",
+            created_at="01-01-2099 00:00:00",
+        )
+        with pytest.raises(ValueError, match="mark_terminal status must be one of"):
+            dbmod.mark_terminal(
+                conn,
+                db_id=db_id,
+                status="running",  # type: ignore[arg-type]
+                finished_at="01-01-2099 00:00:01",
+                exit_code=0,
+            )
+
+
 def test_migration_runs_in_transaction(tmp_path):
     """A failing migration must NOT leave a half-applied schema behind.
 
@@ -323,6 +444,145 @@ def test_migration_runs_in_transaction(tmp_path):
             for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")
         }
         assert "doomed" not in tables, "rolled-back migration must not leave debris"
+
+
+def test_find_prunable_runs_filters_age_status_and_source(tmp_path):
+    db_path = tmp_path / "prune-select.db"
+    dbmod.init_db(db_path)
+    now = datetime.strptime("15-05-2099 12:00:00", "%d-%m-%Y %H:%M:%S")
+
+    with dbmod.connection_scope(db_path) as conn:
+        old_dash = dbmod.insert_pending_run(
+            conn,
+            run_id="old-dash",
+            kind="baseline",
+            args={},
+            command=[],
+            date_dir="01-01-2099",
+            created_at="01-01-2099 00:00:00",
+            source="dashboard",
+        )
+        dbmod.mark_terminal(
+            conn,
+            db_id=old_dash,
+            status="done",
+            finished_at="01-01-2099 00:01:00",
+            exit_code=0,
+        )
+
+        old_cli = dbmod.insert_pending_run(
+            conn,
+            run_id="old-cli",
+            kind="current",
+            args={},
+            command=[],
+            date_dir="01-01-2099",
+            created_at="01-01-2099 00:00:00",
+            source="cli",
+        )
+        dbmod.mark_terminal(
+            conn,
+            db_id=old_cli,
+            status="failed",
+            finished_at="01-01-2099 00:01:00",
+            exit_code=1,
+        )
+
+        old_discovered = dbmod.insert_pending_run(
+            conn,
+            run_id="old-disc",
+            kind="report",
+            args={},
+            command=[],
+            date_dir="01-01-2099",
+            created_at="01-01-2099 00:00:00",
+            source="discovered",
+        )
+        dbmod.mark_terminal(
+            conn,
+            db_id=old_discovered,
+            status="done",
+            finished_at="01-01-2099 00:01:00",
+            exit_code=0,
+        )
+
+        recent_dash = dbmod.insert_pending_run(
+            conn,
+            run_id="recent-dash",
+            kind="baseline",
+            args={},
+            command=[],
+            date_dir="10-05-2099",
+            created_at="10-05-2099 00:00:00",
+            source="dashboard",
+        )
+        dbmod.mark_terminal(
+            conn,
+            db_id=recent_dash,
+            status="done",
+            finished_at="10-05-2099 00:01:00",
+            exit_code=0,
+        )
+
+        running_old = dbmod.insert_pending_run(
+            conn,
+            run_id="running-old",
+            kind="current",
+            args={},
+            command=[],
+            date_dir="01-01-2099",
+            created_at="01-01-2099 00:00:00",
+            source="dashboard",
+        )
+        dbmod.mark_running(
+            conn,
+            db_id=running_old,
+            pid=1234,
+            pgid=1234,
+            pid_start_time="42",
+            started_at="01-01-2099 00:00:01",
+        )
+
+        rows = dbmod.find_prunable_runs(conn, older_than_days=30, now=now)
+        assert [row["id"] for row in rows] == [old_dash, old_cli]
+
+
+def test_prune_runs_by_id_deletes_only_terminal_rows(tmp_path):
+    db_path = tmp_path / "prune-delete.db"
+    dbmod.init_db(db_path)
+    with dbmod.connection_scope(db_path) as conn:
+        terminal_id = dbmod.insert_pending_run(
+            conn,
+            run_id="terminal-row",
+            kind="baseline",
+            args={},
+            command=[],
+            date_dir="01-01-2099",
+            created_at="01-01-2099 00:00:00",
+        )
+        dbmod.mark_terminal(
+            conn,
+            db_id=terminal_id,
+            status="done",
+            finished_at="01-01-2099 00:00:01",
+            exit_code=0,
+        )
+        pending_id = dbmod.insert_pending_run(
+            conn,
+            run_id="pending-row",
+            kind="current",
+            args={},
+            command=[],
+            date_dir="01-01-2099",
+            created_at="01-01-2099 00:00:00",
+        )
+
+        deleted = dbmod.prune_runs_by_id(
+            conn, db_ids=[terminal_id, pending_id, 999999]
+        )
+        assert deleted == 1
+        assert dbmod.get_run(conn, terminal_id) is None
+        assert dbmod.get_run(conn, pending_id) is not None
 
 
 # Module-level smoke: timestamp formatter we depend on parses what we expect.

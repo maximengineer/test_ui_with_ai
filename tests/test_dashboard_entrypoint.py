@@ -9,6 +9,9 @@ policy. Pin both.
 
 from __future__ import annotations
 
+import subprocess
+import sys
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -109,7 +112,7 @@ def _cors_origin_for(dev_mode: bool) -> str | None:
     before any DB access), so skipping the lifespan is safe here.
     """
     app = create_app(dev_mode=dev_mode)
-    client = TestClient(app)
+    client = TestClient(app, backend_options={"use_uvloop": True})
     resp = client.options(
         "/api/health",
         headers={
@@ -168,7 +171,7 @@ def _cors_origin_for_default() -> str | None:
     """Same as `_cors_origin_for` but uses the factory's default arg
     (which reads the env var). Used by `test_create_app_default_consults_env`."""
     app = create_app()
-    client = TestClient(app)
+    client = TestClient(app, backend_options={"use_uvloop": True})
     resp = client.options(
         "/api/health",
         headers={
@@ -177,3 +180,25 @@ def _cors_origin_for_default() -> str | None:
         },
     )
     return resp.headers.get("access-control-allow-origin")
+
+
+def test_dashboard_api_package_import_does_not_bootstrap_main():
+    """`import dashboard.api` alone must NOT import `dashboard.api.main`.
+
+    Utility scripts import `dashboard.api.db` and should not trigger app
+    bootstrap side effects (SPA mount logs, startup wiring) just to reach
+    DB helpers.
+    """
+    script = """
+import sys
+import dashboard.api
+assert "dashboard.api.main" not in sys.modules, sys.modules.keys()
+print("ok")
+"""
+    cp = subprocess.run(
+        [sys.executable, "-c", script],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    assert cp.stdout.strip() == "ok"

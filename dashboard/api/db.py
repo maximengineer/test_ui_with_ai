@@ -42,25 +42,26 @@ import json
 import re
 import sqlite3
 from contextlib import contextmanager
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Callable, Iterator
+
+from .lifecycle import (
+    ACTIVE_STATUSES_TUPLE,
+    NON_DELETABLE_STATUSES_TUPLE,
+    RunStatus,
+    RUN_STATUSES_TUPLE,
+    TERMINAL_STATUSES_TUPLE,
+    transition_sources_for,
+)
 
 
 # Mirrors `Manifest.Kind` (test_ui/common/manifest.py) - keeping these in
 # sync is enforced by `test_dashboard_db.py::test_run_kinds_match_manifest`.
 RUN_KINDS_TUPLE: tuple[str, ...] = ("baseline", "current", "comparator", "report")
 
-# Dashboard-local lifecycle vocabulary. Differs from `Manifest.Status` in two
-# ways: (1) we have `pending` for "row inserted, subprocess not yet spawned";
-# (2) terminal success is `done` (dashboard-side), which maps to the
-# manifest's `complete`. The mapping happens in `sync.py`.
-RUN_STATUSES_TUPLE: tuple[str, ...] = (
-    "pending",
-    "running",
-    "done",
-    "failed",
-    "interrupted",
-)
+# Dashboard lifecycle vocabulary is defined in `dashboard/api/lifecycle.py`
+# and re-exported here for compatibility with existing imports/tests.
 
 # How a row got into the table.
 RUN_SOURCES_TUPLE: tuple[str, ...] = ("dashboard", "discovered", "cli")
@@ -149,18 +150,9 @@ MIGRATIONS: list[Callable[[sqlite3.Connection], None]] = [
 ]
 
 
-# TODO(retention): the `runs` table grows monotonically - a year of
-# daily runs (4 kinds) is ~1460 rows + ~1460 on-disk dirs of multi-MB
-# artifacts. Pre-MVP, no automatic pruning ships. When operators start
-# hitting disk-pressure issues, add either:
-#   (a) a `DELETE FROM runs WHERE created_at < ? AND status IN (...)`
-#       background task with matching on-disk `data/<kind>/<date>/<run_id>/`
-#       cleanup, OR
-#   (b) a `POST /api/runs/prune?older_than=<days>` route the operator
-#       triggers on demand (safer - no surprise data loss).
-# The Run row's `source` column distinguishes dashboard-spawned vs.
-# discovered runs, so the policy can differ (e.g. only prune `dashboard`
-# rows, leave `discovered` alone).
+_RETENTION_DATE_FORMAT = "%d-%m-%Y"
+_RETENTION_DATETIME_FORMAT = "%d-%m-%Y %H:%M:%S"
+_RETENTION_DEFAULT_SOURCES: tuple[str, ...] = ("dashboard", "cli")
 
 
 def connect(db_path: Path) -> sqlite3.Connection:
@@ -294,7 +286,7 @@ def insert_discovered_run(
     *,
     run_id: str,
     kind: str,
-    status: str,
+    status: RunStatus,
     created_at: str,
     started_at: str | None,
     finished_at: str | None,
@@ -341,7 +333,7 @@ def list_runs(
     conn: sqlite3.Connection,
     *,
     kind: str | None = None,
-    status: str | None = None,
+    status: RunStatus | None = None,
     date_dir: str | None = None,
     limit: int = 50,
     offset: int = 0,
@@ -464,19 +456,11 @@ def mark_running(
     return cursor.rowcount > 0
 
 
-# Statuses that mean "this run is done; do not overwrite". Used as the NOT
-# IN clause in `mark_terminal` so a late-arriving update from the watcher
-# can't overwrite a terminal status (e.g. an `interrupted` set by restart
-# recovery, which would be wrong to flip back to `done` if the OS-level
-# subprocess somehow still exits cleanly later).
-_TERMINAL_STATUSES = ("done", "failed", "interrupted")
-
-
 def mark_terminal(
     conn: sqlite3.Connection,
     *,
     db_id: int,
-    status: str,
+    status: RunStatus,
     finished_at: str,
     exit_code: int | None,
     error: str | None = None,
@@ -484,22 +468,24 @@ def mark_terminal(
     """Set the terminal status. Race-safe: refuses to overwrite an existing
     terminal status. Returns True iff the row was updated.
 
-    `status` MUST be one of `_TERMINAL_STATUSES` - enforced here rather
-    than relying on the CHECK constraint to surface the bug at the
-    Python level (clearer traceback than an IntegrityError).
+    `status` MUST be terminal. Allowed source statuses are derived from
+    the lifecycle transition matrix (`dashboard/api/lifecycle.py`) so the
+    semantics stay centralized.
     """
-    if status not in _TERMINAL_STATUSES:
+    if status not in TERMINAL_STATUSES_TUPLE:
         raise ValueError(
-            f"mark_terminal status must be one of {_TERMINAL_STATUSES}, got {status!r}"
+            "mark_terminal status must be one of "
+            f"{TERMINAL_STATUSES_TUPLE}, got {status!r}"
         )
-    placeholders = ", ".join("?" * len(_TERMINAL_STATUSES))
+    allowed_from = transition_sources_for(status)  # pending/running for terminals
+    placeholders = ", ".join("?" * len(allowed_from))
     cursor = conn.execute(
         f"""
         UPDATE runs
         SET status = ?, finished_at = ?, exit_code = ?, error = ?
-        WHERE id = ? AND status NOT IN ({placeholders})
+        WHERE id = ? AND status IN ({placeholders})
         """,
-        (status, finished_at, exit_code, error, db_id, *_TERMINAL_STATUSES),
+        (status, finished_at, exit_code, error, db_id, *allowed_from),
     )
     return cursor.rowcount > 0
 
@@ -514,8 +500,10 @@ def find_active_runs(conn: sqlite3.Connection) -> list[sqlite3.Row]:
     Recovery treats both the same way: PGID-verify, kill if ours, mark
     interrupted.
     """
+    placeholders = ", ".join("?" * len(ACTIVE_STATUSES_TUPLE))
     return conn.execute(
-        "SELECT * FROM runs WHERE status IN ('pending', 'running')"
+        f"SELECT * FROM runs WHERE status IN ({placeholders})",
+        ACTIVE_STATUSES_TUPLE,
     ).fetchall()
 
 
@@ -528,22 +516,16 @@ def find_active_run_for_kind_date(
     rule from the plan: a second request returns 409, not a duplicate
     spawn that would race the first for the .tmp dir.
     """
-    return conn.execute(
-        """
+    placeholders = ", ".join("?" * len(ACTIVE_STATUSES_TUPLE))
+    query = f"""
         SELECT * FROM runs
-        WHERE kind = ? AND date_dir = ? AND status IN ('pending', 'running')
+        WHERE kind = ? AND date_dir = ? AND status IN ({placeholders})
         LIMIT 1
-        """,
-        (kind, date_dir),
+    """
+    return conn.execute(
+        query,
+        (kind, date_dir, *ACTIVE_STATUSES_TUPLE),
     ).fetchone()
-
-
-# Statuses that block delete: an in-flight subprocess would still be
-# writing to the artifact dir, and removing the row from under it
-# leaves the runner with no DB target for its terminal-status update.
-# Operator must wait for completion (or kill via the future cancel
-# route) before deleting.
-_NON_DELETABLE_STATUSES = ("pending", "running")
 
 
 class RunNotDeletable(ValueError):
@@ -566,13 +548,112 @@ def delete_run(conn: sqlite3.Connection, db_id: int) -> sqlite3.Row | None:
     row = get_run(conn, db_id)
     if row is None:
         return None
-    if row["status"] in _NON_DELETABLE_STATUSES:
+    if row["status"] in NON_DELETABLE_STATUSES_TUPLE:
         raise RunNotDeletable(
             f"run id={db_id} is {row['status']!r}; refusing to delete an "
             "in-flight run. Wait for it to terminate first."
         )
     conn.execute("DELETE FROM runs WHERE id = ?", (db_id,))
     return row
+
+
+def _retention_timestamp_for_row(row: sqlite3.Row) -> datetime | None:
+    """Best-effort timestamp for retention comparisons.
+
+    `created_at` is preferred; if it is malformed (legacy/bad data),
+    we fall back to `date_dir`. Rows with neither parseable value are
+    skipped by prune selection to avoid accidental deletion.
+    """
+    created_at = row["created_at"]
+    if isinstance(created_at, str):
+        try:
+            return datetime.strptime(created_at, _RETENTION_DATETIME_FORMAT)
+        except ValueError:
+            pass
+    date_dir = row["date_dir"]
+    if isinstance(date_dir, str):
+        try:
+            return datetime.strptime(date_dir, _RETENTION_DATE_FORMAT)
+        except ValueError:
+            pass
+    return None
+
+
+def find_prunable_runs(
+    conn: sqlite3.Connection,
+    *,
+    older_than_days: int,
+    now: datetime,
+    include_sources: tuple[str, ...] = _RETENTION_DEFAULT_SOURCES,
+    limit: int = 1000,
+) -> list[sqlite3.Row]:
+    """Select terminal rows older than the retention cutoff.
+
+    Manual retention defaults to pruning only dashboard/CLI rows; discovered
+    rows stay untouched unless the caller opts in via `include_sources`.
+    """
+    if older_than_days < 1:
+        raise ValueError(f"older_than_days must be >= 1, got {older_than_days}")
+    if limit < 1:
+        raise ValueError(f"limit must be >= 1, got {limit}")
+    if not include_sources:
+        return []
+
+    status_placeholders = ", ".join("?" * len(TERMINAL_STATUSES_TUPLE))
+    source_placeholders = ", ".join("?" * len(include_sources))
+    rows = conn.execute(
+        f"""
+        SELECT *
+        FROM runs
+        WHERE status IN ({status_placeholders})
+          AND source IN ({source_placeholders})
+        """,
+        (*TERMINAL_STATUSES_TUPLE, *include_sources),
+    ).fetchall()
+
+    cutoff = now - timedelta(days=older_than_days)
+    candidates: list[tuple[datetime, sqlite3.Row]] = []
+    for row in rows:
+        row_ts = _retention_timestamp_for_row(row)
+        if row_ts is None:
+            continue
+        if row_ts < cutoff:
+            candidates.append((row_ts, row))
+
+    candidates.sort(key=lambda item: (item[0], item[1]["id"]))
+    return [row for _, row in candidates[:limit]]
+
+
+def prune_runs_by_id(
+    conn: sqlite3.Connection,
+    *,
+    db_ids: list[int],
+) -> int:
+    """Delete rows by db id. Returns number of deleted rows.
+
+    Defensive: ignores `pending`/`running` ids even if a buggy caller passes
+    them in. Retention must never delete in-flight rows.
+    """
+    if not db_ids:
+        return 0
+    placeholders = ", ".join("?" * len(db_ids))
+    rows = conn.execute(
+        f"SELECT id, status FROM runs WHERE id IN ({placeholders})",
+        db_ids,
+    ).fetchall()
+    deletable_ids = [
+        int(row["id"])
+        for row in rows
+        if row["status"] not in NON_DELETABLE_STATUSES_TUPLE
+    ]
+    if not deletable_ids:
+        return 0
+    placeholders = ", ".join("?" * len(deletable_ids))
+    cursor = conn.execute(
+        f"DELETE FROM runs WHERE id IN ({placeholders})",
+        deletable_ids,
+    )
+    return cursor.rowcount
 
 
 __all__ = [
@@ -595,5 +676,7 @@ __all__ = [
     "list_runs",
     "get_run",
     "delete_run",
+    "find_prunable_runs",
+    "prune_runs_by_id",
     "RunNotDeletable",
 ]

@@ -26,11 +26,11 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 from test_ui.config import settings
 
 from .db import RUN_KINDS_TUPLE, RUN_SOURCES_TUPLE, RUN_STATUSES_TUPLE
+from .lifecycle import RunStatus
 
 
 # Re-export as Literal types so FastAPI generates a closed enum in OpenAPI.
 RunKind = Literal["baseline", "current", "comparator", "report"]
-RunStatus = Literal["pending", "running", "done", "failed", "interrupted"]
 RunSource = Literal["dashboard", "discovered", "cli"]
 
 

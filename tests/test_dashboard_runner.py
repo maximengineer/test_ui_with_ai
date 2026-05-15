@@ -16,8 +16,11 @@ in an `@pytest.mark.slow` integration test.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import os
+import signal
+import subprocess
 import sys
 from unittest.mock import MagicMock
 
@@ -28,6 +31,7 @@ from dashboard.api import runner
 from dashboard.api.runner import (
     _build_command,
     _pgid_alive_and_ours,
+    _resolve_sites_file,
     _watch,
     pid_start_time,
     recover_orphaned_runs,
@@ -85,11 +89,21 @@ def test_pid_start_time_returns_none_for_missing_pid():
 
 
 def test_pgid_alive_and_ours_for_current_process():
-    """The CURRENT process's PGID with our recorded start time MUST be 'alive
-    and ours'. Sanity-checks the happy path of recovery's go/no-go decision."""
-    pgid = os.getpgid(os.getpid())
-    start = pid_start_time(os.getpid())
-    assert _pgid_alive_and_ours(pgid, start) is True
+    """A known live process-group leader should validate as alive+ours.
+
+    Uses a dedicated subprocess with `start_new_session=True` so pid==pgid
+    and the recorded start-time unambiguously belongs to the group leader.
+    """
+    proc = subprocess.Popen(["/bin/sleep", "5"], start_new_session=True)
+    try:
+        pgid = os.getpgid(proc.pid)
+        start = pid_start_time(proc.pid)
+        assert start is not None
+        assert _pgid_alive_and_ours(pgid, start) is True
+    finally:
+        with contextlib.suppress(ProcessLookupError):
+            os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
+        proc.wait(timeout=5)
 
 
 def test_pgid_alive_and_ours_returns_false_for_dead_pgid():
@@ -101,15 +115,49 @@ def test_pgid_alive_and_ours_detects_recycled_pid():
     """If the recorded start time disagrees with /proc's current value, the
     PID has been recycled by the OS for an unrelated process - must NOT
     be killed even though killpg(pgid, 0) succeeds."""
-    pgid = os.getpgid(os.getpid())
-    # Recorded a wildly different start time than the real one.
-    bogus_start = "1"  # 1 clock tick - definitely not us
-    assert _pgid_alive_and_ours(pgid, bogus_start) is False
+    proc = subprocess.Popen(["/bin/sleep", "5"], start_new_session=True)
+    try:
+        pgid = os.getpgid(proc.pid)
+        # Recorded a wildly different start time than the real one.
+        bogus_start = "1"  # 1 clock tick - definitely not this process
+        assert _pgid_alive_and_ours(pgid, bogus_start) is False
+    finally:
+        with contextlib.suppress(ProcessLookupError):
+            os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
+        proc.wait(timeout=5)
 
 
 # --------------------------------------------------------------------------- #
 # _build_command                                                             #
 # --------------------------------------------------------------------------- #
+
+
+def test_resolve_sites_file_materializes_cached_copy(db_path):
+    """sites.yml for subprocess argv should be an on-disk cache path under
+    data_root, not a cwd-relative path."""
+    path = _resolve_sites_file()
+    assert path == settings.data_root / ".cache" / "sites.yml"
+    assert path.is_file()
+    assert "sites:" in path.read_text(encoding="utf-8")
+
+
+def test_resolve_sites_file_falls_back_when_cache_write_fails(db_path, monkeypatch):
+    """If cache refresh fails (read-only filesystem, permissions), runner
+    should return the package-adjacent fallback path."""
+    cache_path = settings.data_root / ".cache" / "sites.yml"
+    real_write_bytes = runner.Path.write_bytes
+
+    def _raising_write_bytes(self, data):
+        if self == cache_path:
+            raise OSError("simulated write failure")
+        return real_write_bytes(self, data)
+
+    monkeypatch.setattr(runner.Path, "write_bytes", _raising_write_bytes)
+
+    path = _resolve_sites_file()
+    assert path != cache_path
+    assert path.name == "sites.yml"
+    assert path.is_file()
 
 
 def test_build_command_baseline(db_path):
@@ -121,6 +169,10 @@ def test_build_command_baseline(db_path):
     assert "snapshot" in argv  # dashboard's "baseline" → CLI's "snapshot"
     assert "--run-id" in argv
     assert rid in argv
+    assert "--sites-file" in argv
+    assert argv[argv.index("--sites-file") + 1] == str(
+        settings.data_root / ".cache" / "sites.yml"
+    )
     assert "--output" in argv
     assert str(settings.baseline_dir) in argv
 
@@ -316,36 +368,43 @@ def test_recover_kills_pgid_when_alive_and_ours(db_path):
     """If the PGID is still alive AND the start time matches what we
     recorded, recovery MUST call the killer with that PGID."""
     rid = new_run_id()
-    pgid = os.getpgid(os.getpid())  # the test process's PGID - definitely alive
-    start = pid_start_time(os.getpid())
+    proc = subprocess.Popen(["/bin/sleep", "5"], start_new_session=True)
+    pgid = os.getpgid(proc.pid)
+    start = pid_start_time(proc.pid)
+    assert start is not None
 
-    with dbmod.connection_scope(db_path) as conn:
-        db_id = dbmod.insert_pending_run(
-            conn,
-            run_id=rid,
-            kind="baseline",
-            args={},
-            command=[],
-            date_dir="01-01-2099",
-            created_at="01-01-2099 00:00:00",
-        )
-        dbmod.mark_running(
-            conn,
-            db_id=db_id,
-            pid=os.getpid(),
-            pgid=pgid,
-            pid_start_time=start,
-            started_at="01-01-2099 00:00:01",
-        )
+    try:
+        with dbmod.connection_scope(db_path) as conn:
+            db_id = dbmod.insert_pending_run(
+                conn,
+                run_id=rid,
+                kind="baseline",
+                args={},
+                command=[],
+                date_dir="01-01-2099",
+                created_at="01-01-2099 00:00:00",
+            )
+            dbmod.mark_running(
+                conn,
+                db_id=db_id,
+                pid=proc.pid,
+                pgid=pgid,
+                pid_start_time=start,
+                started_at="01-01-2099 00:00:01",
+            )
 
-    killer = MagicMock()
-    n = recover_orphaned_runs(db_path, killer=killer)
+        killer = MagicMock()
+        n = recover_orphaned_runs(db_path, killer=killer)
 
-    assert n == 1
-    killer.assert_called_once_with(pgid)
-    with dbmod.connection_scope(db_path) as conn:
-        row = dbmod.get_run(conn, db_id)
-    assert row["status"] == "interrupted"
+        assert n == 1
+        killer.assert_called_once_with(pgid)
+        with dbmod.connection_scope(db_path) as conn:
+            row = dbmod.get_run(conn, db_id)
+        assert row["status"] == "interrupted"
+    finally:
+        with contextlib.suppress(ProcessLookupError):
+            os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
+        proc.wait(timeout=5)
 
 
 def test_recover_handles_pending_row_with_no_pgid(db_path):

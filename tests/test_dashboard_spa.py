@@ -49,7 +49,7 @@ def spa_client(tmp_path, monkeypatch):
     dist = _seed_dist(tmp_path)
     monkeypatch.setattr("dashboard.api.spa._spa_dist_dir", lambda: dist)
     app = create_app(dev_mode=False)
-    return TestClient(app)
+    return TestClient(app, backend_options={"use_uvloop": True})
 
 
 # --------------------------------------------------------------------------- #
@@ -129,7 +129,7 @@ def test_mount_spa_is_noop_when_dist_missing(tmp_path, monkeypatch):
     pipeline never runs `npm build`."""
     monkeypatch.setattr("dashboard.api.spa._spa_dist_dir", lambda: tmp_path / "no-such")
     app = create_app(dev_mode=False)
-    client = TestClient(app)
+    client = TestClient(app, backend_options={"use_uvloop": True})
 
     # API still works.
     r = client.get("/openapi.json")

@@ -52,7 +52,7 @@ def _client_with(db_path: Path):
 
     app.dependency_overrides[get_db] = _override
     try:
-        with TestClient(app) as c:
+        with TestClient(app, backend_options={"use_uvloop": True}) as c:
             yield c
     finally:
         app.dependency_overrides.clear()
@@ -519,7 +519,7 @@ def test_screenshot_includes_cors_header_in_dev_mode(tmp_path, monkeypatch):
 
     app2.dependency_overrides[get_db] = _override
     try:
-        with TestClient(app2) as c:
+        with TestClient(app2, backend_options={"use_uvloop": True}) as c:
             r = c.get(
                 f"/api/reports/01-01-2099/{rid}/screenshot",
                 params={"url_id": "site-a", "which": "baseline"},

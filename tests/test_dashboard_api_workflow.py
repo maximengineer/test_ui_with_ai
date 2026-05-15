@@ -183,7 +183,7 @@ def e2e_env(tmp_path, monkeypatch):
 
         app.dependency_overrides[get_db] = _override
         try:
-            with TestClient(app) as c:
+            with TestClient(app, backend_options={"use_uvloop": True}) as c:
                 yield c
         finally:
             app.dependency_overrides.clear()
