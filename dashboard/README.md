@@ -96,6 +96,12 @@ spawning, passes it via `--run-id`, and tracks the row by that ID. The
 CLI accepts the flag transparently (auto-generates one when absent -
 the CLI use case).
 
+**Packaged `sites.yml` stability.** Subprocess spawns always pass an
+on-disk sites file path. `runner._resolve_sites_file()` materializes the
+bundled `test_ui/sites.yml` into `AFR_DATA_ROOT/.cache/sites.yml`, so
+source-tree, editable-install, and packaged deployments use the same
+stable argv path.
+
 **Sessions view (frontend-derived).** The Runs page shows one row per
 *session* (= one cycle of baseline + current + comparator + report)
 rather than one row per backend `runs` record. Sessions are inferred
@@ -199,17 +205,15 @@ per-pattern details and override env vars.
 
 ## Known limitations (planned for later milestones)
 
-- **No data retention.** `runs` table + on-disk dirs grow monotonically;
-  see `dashboard/api/db.py` `TODO(retention)` for the planned approach.
+- **No automatic retention daemon.** Pruning is operator-triggered via
+  `make prune-runs` (or `scripts/prune_runs.py` directly). There is still
+  no background auto-delete task.
 - **No authentication.** The startup warning when binding non-loopback
   is the only access control. MVP-acceptable for localhost / trusted-LAN
   use.
 - **Image size ~2 GB.** Bundles Playwright Chromium because the spawned
   subprocesses crawl from inside the dashboard container. A
   separate-container architecture is possible but much more complex.
-- **Zipped-wheel deployment unsupported.** `dashboard/api/routes.py`
-  needs a stable `sites.yml` path; under a wheel the bundled YAML is in
-  a zipfile. Switch to editable install for now.
 - **Run all is browser-orchestrated.** The chain progression lives in
   the SPA tab; closing the tab or recreating the dashboard container
   stops the next-stage spawn (the in-flight subprocess finishes

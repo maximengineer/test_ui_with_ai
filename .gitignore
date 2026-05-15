@@ -12,7 +12,11 @@ htmlcov/
 node_modules/
 
 # Secrets and local config
+.claude
+.kilo
 .env
+AGENTS.md
+CLAUDE.md
 
 # Project artifacts: crawl outputs, run logs, dashboard SQLite db
 # (data/baseline, data/current, data/comparator, data/report, data/runs, data/dashboard.db)

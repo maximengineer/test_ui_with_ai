@@ -157,6 +157,13 @@ and a content hash. `latest` symlinks point at the most recent
 rename. See [test_ui/common/manifest.py](test_ui/common/manifest.py)
 + [test_ui/common/publish.py](test_ui/common/publish.py).
 
+Run-status vocab is intentionally split by layer:
+- manifest (`test_ui/common/manifest.py`): `running|complete|failed|interrupted`
+- dashboard DB/API (`dashboard/api/lifecycle.py`): `pending|running|done|failed|interrupted`
+
+The only renamed success value is `complete <-> done`; mapping + transition
+rules live centrally in [dashboard/api/lifecycle.py](dashboard/api/lifecycle.py).
+
 The full per-file shape is in [docs/data_shapes.md](docs/data_shapes.md).
 
 ---

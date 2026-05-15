@@ -12,17 +12,16 @@ A tool for capturing baseline / current snapshots of web pages, comparing visual
 
 - CLI capture of baselines and current snapshots via [Crawl4AI](https://github.com/unclecode/crawl4ai), with deterministic asset naming.
 - Visual diffing (SSIM-based) and structural diffing (HTML / CSS / JS) between baseline and current.
-- Generation of an HTML report from the comparison data, with an optional AI analysis step (any OpenAI-compatible provider; default is OpenRouter + qwen/qwen3.6-plus).
-- Docker Compose layout with a Python service and a Node AI-analyzer service.
+- Enhanced HTML report generation from comparator output, with optional AI analysis (OpenAI-compatible provider; default is OpenRouter + qwen/qwen3.6-plus).
+- AI request/response contract validation across Python (Pydantic) and Node (ajv) via generated schemas in [`schemas/`](schemas/).
+- Dashboard for triggering runs and browsing reports (`dashboard/`), backed by FastAPI + React.
+- CI coverage for linting, tests, schema drift, and dashboard OpenAPI drift.
 
-**What is being fixed in the current refactor:**
+**Current limitations:**
 
-- The AI-analysis step today does **not** pass meaningful structured diff data to the model. It effectively gets screenshots plus a few counts. Phase A.1 of the plan rewires this so the model actually sees CSS / JS / HTML changes.
-- Two large modules (`test_ui/report/generator.py`, `test_ui/comparator/engine.py`) are being broken into single-responsibility submodules.
-- Test coverage and CI are being added; the project currently has effectively none.
-- A web dashboard is planned (Milestone C) but does not exist yet.
-
-**Do not use this as an unattended deployment gate** until Milestone A is complete. Until then, treat the AI output as a polished narrative over noisy diffs (see [`docs/determinism.md`](docs/determinism.md) for the sources of noise that aren't yet controlled).
+- AI output should not be treated as an unattended deployment gate yet; use it as assisted analysis, not automated approval.
+- Crawler determinism is intentionally partial (animations/dynamic content/timezone variance can still introduce noise). See [`docs/determinism.md`](docs/determinism.md).
+- Legacy compatibility paths still exist for historical layouts/configs; see [`BACKLOG.md`](BACKLOG.md) and [`docs/ARCHITECTURE_IMPROVEMENT_PLAN.md`](docs/ARCHITECTURE_IMPROVEMENT_PLAN.md).
 
 ## Privacy and data sent to the AI provider
 
@@ -59,7 +58,8 @@ make report                         # AI-assisted HTML report
 
 Or in one go: `make test-full`.
 
-Reports land in `data/report/<DD-MM-YYYY>/`. Look for `enhanced_analysis_report.html`.
+Reports are published under `data/report/<DD-MM-YYYY>/<run_id>/` with one
+`enhanced_analysis_report.html` per report run.
 
 ### Local development (no Docker for the Python side)
 
@@ -102,7 +102,13 @@ All runtime settings are read from environment variables prefixed `AFR_` (or fro
 | `AFR_BROWSER_HEADLESS` | `true` | Headless browser mode. |
 | `AFR_TIMEZONE` | `Europe/Dublin` | Timezone for date directory naming. |
 
-> **Breaking change (Phase A.0.4):** the previously-supported unprefixed `AI_ANALYZER_SERVICE_URL` is no longer accepted. Use `AFR_AI_ANALYZER_SERVICE_URL`. The application will print a deprecation warning if the old name is set.
+> **Breaking change:** the previously-supported unprefixed `AI_ANALYZER_SERVICE_URL` is no longer accepted. Use `AFR_AI_ANALYZER_SERVICE_URL`. The application will print a deprecation warning if the old name is set.
+
+## Troubleshooting AI analysis
+
+- `AFR_AI_ENABLED=false`: report generation still succeeds, but per-URL output uses `ai_disabled.json` (not `ai_analysis.json`).
+- Analyzer unavailable (`AFR_AI_ENABLED=true` + analyzer down/unreachable): report generation still completes with per-URL `ai_error.json` files.
+- Dashboard health check: `GET /api/health` returns `ai_analyzer_ok=false` when the analyzer is unreachable.
 
 ## Site configuration
 
@@ -110,25 +116,29 @@ Edit [`test_ui/sites.yml`](test_ui/sites.yml):
 
 ```yaml
 sites:
-  - name: "Homepage"
+  - id: "1"
+    name: "Homepage"
     url: "https://your-site.com"
-  - name: "About"
+  - id: "2"
+    name: "About"
     url: "https://your-site.com/about"
 ```
 
-> Milestone B will add stable site IDs (`id: <slug>`) so renames don't break historical mapping. Today, site `name` is used as the key.
+`id` is the stable on-disk key (`data/.../<site_id>/...`). Keep `id` stable
+across renames and URL edits to preserve history continuity.
 
 ## Data layout
 
 ```
 data/
-├── baseline/<DD-MM-YYYY>/<url_dir>/
+├── baseline/<DD-MM-YYYY>/<run_id>/<site_id>/
 │   ├── screenshot.png
-│   ├── dom.html
-│   ├── assets/
+│   ├── index.html
+│   ├── css/
+│   ├── js/
 │   └── metadata.json
-├── current/<DD-MM-YYYY>/<url_dir>/
-├── comparator/<DD-MM-YYYY>/<url_dir>/
+├── current/<DD-MM-YYYY>/<run_id>/<site_id>/
+├── comparator/<DD-MM-YYYY>/<run_id>/<site_id>/
 │   ├── comparison_results.json
 │   └── diffs/
 │       ├── change_summary.json
@@ -136,13 +146,17 @@ data/
 │       ├── css_changes.json
 │       ├── js_changes.json
 │       └── visual_diff.png
-└── report/<DD-MM-YYYY>/<url_dir>/
-    ├── ai_analysis.json
+└── report/<DD-MM-YYYY>/<run_id>/<site_id>/
+    ├── ai_analysis.json | ai_error.json | no_changes.json | ai_disabled.json
     ├── structured_data.json
     └── screenshots/
-```
 
-> Milestone B introduces immutable per-execution `run_id` directories under each date dir to prevent same-day runs from overwriting each other.
+data/runs/
+├── <db_id>.run.json
+└── <db_id>.log
+
+data/dashboard.db
+```
 
 ## Make targets
 
@@ -156,7 +170,8 @@ make test-local-*   # Local equivalents (no Docker for the Python side)
 
 make test           # Run fast unit tests
 make audit          # Check source for hardcoded data/ paths
-make clean-all      # Remove all data
+make clean-all CONFIRM_CLEAN_ALL=1  # Remove all data (destructive)
+make prune-runs     # Manual retention prune for old terminal runs
 make help           # Show all targets
 ```
 
@@ -164,19 +179,21 @@ make help           # Show all targets
 
 ```
 test_ui/
-├── cli.py              # CLI entrypoint (Click)
+├── __main__.py         # module entrypoint (`python -m test_ui`)
+├── cli/                # Click commands + orchestrator
 ├── config.py           # Settings (Pydantic)
 ├── crawler/engine.py   # Crawl4AI wrapper + asset downloading
-├── comparator/engine.py # Visual + structural diffing
-├── report/generator.py # AI-analysis orchestration + HTML rendering
-├── contracts/          # Pydantic models for the AI request/response (Phase A.1)
-├── common/             # Shared utilities (Phase A.3)
+├── comparator/         # Visual + structural diffing
+├── report/             # AI-analysis orchestration + HTML rendering
+├── contracts/          # Pydantic models for AI request/response
+├── common/             # Shared utilities
 └── utils/              # Image compression, etc.
 
 ai_analyzer/
-└── server.js           # Node + Express + Google Generative AI
+└── server.js           # Node + Express + OpenAI-compatible API wrapper
 
-schemas/                # Generated JSON Schema (Phase A.1)
+dashboard/              # FastAPI backend + React frontend
+schemas/                # Generated JSON Schemas + dashboard OpenAPI snapshot
 docs/                   # Internal documentation
 scripts/                # One-off utilities (audit, migrations, schema export)
 tests/                  # Pytest suite + fixtures
@@ -190,6 +207,17 @@ make test                           # run the fast suite
 make audit                          # check for hardcoded paths
 .venv/bin/ruff check .              # lint
 ```
+
+### Documentation drift checklist
+
+When changing architecture-affecting behavior, update docs and generated
+contracts in the same PR:
+
+1. Update `README.md` / `ARCHITECTURE.md` / `docs/data_shapes.md` for data-layout, run-state, or workflow changes.
+2. If `test_ui/contracts/ai_contract.py` changed, run `python scripts/export_schemas.py` and commit `schemas/*.schema.json`.
+3. If dashboard API models/routes changed, refresh `schemas/dashboard-openapi.json` and regenerate frontend types:
+   - `python -c "import json; from dashboard.api.main import create_app; print(json.dumps(create_app(dev_mode=False).openapi(), indent=2))" > schemas/dashboard-openapi.json`
+   - `cd dashboard/web && npm run gen:api`
 
 Open issues and pull requests should reference [`BACKLOG.md`](BACKLOG.md) when the work is a known follow-up; for context on past architectural decisions see the archived [`docs/history/REFACTOR_AND_DASHBOARD_PLAN.md`](docs/history/REFACTOR_AND_DASHBOARD_PLAN.md).
 

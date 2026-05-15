@@ -1,4 +1,4 @@
-.PHONY: baseline current compare report report-date clean-baseline clean-current clean-reports clean-comparator clean-all clean-orphans test test-local-baseline test-local-current test-local-comparator test-local-report test-local-report-date test-local-report-with-ai test-ai-analyzer test-full test-local-full test-existing-data audit dashboard-dev dashboard-dev-backend dashboard-docker dashboard-build dashboard-logs dashboard-down tamper-baseline help
+.PHONY: baseline current compare report report-date clean-baseline clean-current clean-reports clean-comparator clean-all clean-orphans prune-runs test test-local-baseline test-local-current test-local-comparator test-local-report test-local-report-date test-local-report-with-ai test-ai-analyzer test-full test-local-full test-existing-data audit dashboard-dev dashboard-dev-backend dashboard-docker dashboard-build dashboard-logs dashboard-down tamper-baseline help
 
 # === Individual Step Commands ===
 
@@ -31,22 +31,27 @@ report-date:
 
 # Clean baseline
 clean-baseline:
-	sudo rm -rf data/baseline
+	rm -rf -- data/baseline
 
 # Clean current data
 clean-current:
-	sudo rm -rf data/current
+	rm -rf -- data/current
 
 # Clean comparator data
 clean-comparator:
-	sudo rm -rf data/comparator
+	rm -rf -- data/comparator
 
 # Clean reports
 clean-reports:
-	sudo rm -rf data/report
+	rm -rf -- data/report
 
 clean-all:
-	sudo rm -rf data
+	@if [ "$(CONFIRM_CLEAN_ALL)" != "1" ]; then \
+		echo "Refusing to remove ./data recursively."; \
+		echo "Re-run with: make clean-all CONFIRM_CLEAN_ALL=1"; \
+		exit 1; \
+	fi
+	rm -rf -- data
 
 # === Testing ===
 
@@ -95,10 +100,20 @@ test-ai-analyzer:
 	curl -X GET http://localhost:3000/health
 
 # Full test cycle with enhanced reporting
-test-full: clean-all baseline current compare report
+test-full:
+	$(MAKE) clean-all CONFIRM_CLEAN_ALL=1
+	$(MAKE) baseline
+	$(MAKE) current
+	$(MAKE) compare
+	$(MAKE) report
 
 # Full local test cycle  
-test-local-full: clean-all test-local-baseline test-local-current test-local-comparator test-local-report
+test-local-full:
+	$(MAKE) clean-all CONFIRM_CLEAN_ALL=1
+	$(MAKE) test-local-baseline
+	$(MAKE) test-local-current
+	$(MAKE) test-local-comparator
+	$(MAKE) test-local-report
 
 # Test locally with correct AI analyzer URL
 test-local-report-with-ai:
@@ -187,6 +202,17 @@ clean-orphans:
 	@cat scripts/cleanup_orphans.py \
 	  | docker exec -i test_ui_with_ai-dashboard-1 python -
 
+# Manual retention prune for old terminal runs + matching artifacts.
+# Default keeps only the last 30 days for source in {dashboard,cli}.
+# Env knobs:
+#   AFR_RETENTION_DAYS=90
+#   AFR_RETENTION_LIMIT=500
+#   AFR_RETENTION_DRY_RUN=1
+#   AFR_RETENTION_INCLUDE_DISCOVERED=1
+prune-runs:
+	@cat scripts/prune_runs.py \
+	  | docker exec -i test_ui_with_ai-dashboard-1 python -
+
 # Help command showing all available Make targets
 help:
 	@echo "=== AI-Powered UI Regression Testing Makefile ==="
@@ -216,7 +242,7 @@ help:
 	@echo "  clean-current      - Remove current data"
 	@echo "  clean-comparator   - Remove comparator data"
 	@echo "  clean-reports      - Remove reports data"
-	@echo "  clean-all          - Remove all data"
+	@echo "  clean-all          - Remove all data (requires CONFIRM_CLEAN_ALL=1)"
 	@echo ""
 	@echo "🔧 UTILITY COMMANDS:"
 	@echo "  test               - Run the unit/golden test suite (fast tests only)"
@@ -233,11 +259,13 @@ help:
 	@echo "  dashboard-down         - Stop dashboard + ai-analyzer containers"
 	@echo "  tamper-baseline        - Inject synthetic changes for end-to-end pipeline validation"
 	@echo "  clean-orphans          - Reap orphan .run.json files + empty date dirs"
+	@echo "  prune-runs             - Manual retention prune for old terminal runs"
 	@echo ""
 	@echo "📦 ENV VARS (see .env.example for full list):"
 	@echo "  AFR_AI_ENABLED=false   - Skip AI calls; write ai_disabled.json markers"
 	@echo "  AFR_AI_CONCURRENCY=N   - Cap concurrent AI requests (default 3)"
 	@echo "  AFR_DATA_ROOT=/path    - Relocate all artifact directories"
+	@echo "  CONFIRM_CLEAN_ALL=1    - Required for destructive clean-all"
 	@echo ""
-	@echo "ℹ️  See README.md for current capabilities/limitations and"
-	@echo "    REFACTOR_AND_DASHBOARD_PLAN.md for the in-progress refactor."
+	@echo "ℹ️  See README.md + ARCHITECTURE.md for current system behavior,"
+	@echo "    and BACKLOG.md for deferred/follow-up work."
