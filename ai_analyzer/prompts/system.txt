@@ -10,7 +10,7 @@ You receive a JSON payload describing diffs detected by a comparator, plus optio
 - structured_data.js_changes: file-level JS diffs. Per-function detail is NOT provided.
 - screenshots: optional baseline / current / visual_diff images (base64 PNG or JPEG).
 
-Records have been prioritized for you: structural HTML changes first, then content changes, then CSS/JS file changes. Per-category truncation may have occurred at 200 entries; per-snippet truncation at 2000 characters. The userPrompt declares any truncation explicitly.
+Records have been prioritized for you: {{PRIORITIZATION_ORDER}}. Per-category truncation may have occurred at {{MAX_CHANGES_PER_CATEGORY}} entries; per-snippet truncation at {{MAX_SNIPPET_CHARS}} characters. The userPrompt declares any truncation explicitly.
 
 ANALYSIS EXPECTATIONS
 

@@ -58,8 +58,25 @@ const MAX_IMAGE_DECODED_BYTES = 10 * 1024 * 1024;
 const MAX_BODY_BYTES = 50 * 1024 * 1024;
 const MAX_CHANGES_PER_CATEGORY = 200;
 const MAX_SNIPPET_CHARS = 2000;
+const PRIORITIZATION_ORDER =
+  'structural HTML changes first, then content changes, then CSS/JS file changes';
+const PROMPT_TEMPLATE_VALUES = {
+  PRIORITIZATION_ORDER,
+  MAX_CHANGES_PER_CATEGORY: String(MAX_CHANGES_PER_CATEGORY),
+  MAX_SNIPPET_CHARS: String(MAX_SNIPPET_CHARS),
+};
 
 const PORT = 3000;
+
+async function defaultInvokeProviderChatCompletion({ apiKey, baseURL, model, messages }) {
+  const ai = new OpenAI({ apiKey, baseURL });
+  return ai.chat.completions.create({
+    model,
+    messages,
+  });
+}
+
+let invokeProviderChatCompletion = defaultInvokeProviderChatCompletion;
 
 // =============================================================================
 // Schema loading + ajv compile (once, at startup)
@@ -118,7 +135,8 @@ function loadSystemPrompt() {
       `(Phase A.1.5 deliverable; see ai_analyzer/prompts/system.txt in the repo.)`
     );
   }
-  SYSTEM_PROMPT = fs.readFileSync(promptPath, 'utf-8');
+  const template = fs.readFileSync(promptPath, 'utf-8');
+  SYSTEM_PROMPT = renderSystemPromptTemplate(template);
   if (SYSTEM_PROMPT.trim().length === 0) {
     throw new Error(`System prompt at ${promptPath} is empty.`);
   }
@@ -239,6 +257,39 @@ ${JSON.stringify(boundedStructuredData, null, 2)}${truncationNote}
 Now analyze this and respond as instructed.`;
 }
 
+// Render the checked-in prompt template using server-owned constants so
+// prompt copy cannot drift from enforcement logic.
+function renderSystemPromptTemplate(template) {
+  let rendered = template;
+  for (const [token, value] of Object.entries(PROMPT_TEMPLATE_VALUES)) {
+    const marker = `{{${token}}}`;
+    if (!rendered.includes(marker)) {
+      throw new Error(
+        `system prompt template missing required marker ${marker}`
+      );
+    }
+    rendered = rendered.split(marker).join(value);
+  }
+  return rendered;
+}
+
+// OpenAI-compatible SDKs can return either:
+// - string content
+// - array of content parts ({ type: "text", text: "..." }, ...)
+function extractAssistantText(content) {
+  if (typeof content === 'string') return content;
+  if (!Array.isArray(content)) return '';
+  return content
+    .map(part => {
+      if (!part || typeof part !== 'object') return '';
+      if (typeof part.text === 'string') return part.text;
+      return '';
+    })
+    .filter(Boolean)
+    .join('\n')
+    .trim();
+}
+
 // Strip markdown fences and parse the model's text into a JSON object.
 // Throws on parse failure; caller wraps in AIAnalysisError.
 function extractAnalysisJson(rawText) {
@@ -266,6 +317,124 @@ function buildErrorResponse({ request_id, error_type, retryable, details, model 
     },
     status,
   };
+}
+
+function _readHeader(headers, name) {
+  if (!headers) return null;
+  if (typeof headers.get === 'function') {
+    return headers.get(name) ?? headers.get(name.toLowerCase()) ?? null;
+  }
+  const direct = headers[name] ?? headers[name.toLowerCase()] ?? headers[name.toUpperCase()];
+  if (Array.isArray(direct)) return direct[0] ?? null;
+  if (direct != null) return direct;
+  if (typeof headers === 'object') {
+    const target = name.toLowerCase();
+    for (const [k, v] of Object.entries(headers)) {
+      if (k.toLowerCase() !== target) continue;
+      if (Array.isArray(v)) return v[0] ?? null;
+      return v ?? null;
+    }
+  }
+  return null;
+}
+
+function extractRetryAfterHeader(err) {
+  const header =
+    _readHeader(err?.headers, 'retry-after')
+    ?? _readHeader(err?.response?.headers, 'retry-after')
+    ?? null;
+  if (header == null) return null;
+  const value = String(header).trim();
+  return value.length > 0 ? value : null;
+}
+
+function _statusFromProviderError(err) {
+  if (typeof err?.status === 'number') return err.status;
+  if (typeof err?.response?.status === 'number') return err.response.status;
+  if (typeof err?.statusCode === 'number') return err.statusCode;
+  return null;
+}
+
+function classifyProviderError(err) {
+  const message = err?.message ? String(err.message) : String(err);
+  const status = _statusFromProviderError(err);
+  const retryAfterHeader = extractRetryAfterHeader(err);
+
+  if (err instanceof OpenAI.RateLimitError || status === 429 || /rate[- ]?limit|429/.test(message.toLowerCase())) {
+    return {
+      error_type: 'rate_limited',
+      retryable: true,
+      status: 429,
+      retry_after: retryAfterHeader,
+      details: `AI provider rate limit: ${message}`,
+    };
+  }
+
+  if (err instanceof OpenAI.APIConnectionTimeoutError || /timed?\s*out|timeout/i.test(message)) {
+    return {
+      error_type: 'timeout',
+      retryable: true,
+      status: 504,
+      retry_after: null,
+      details: `AI provider timeout: ${message}`,
+    };
+  }
+
+  if (err instanceof OpenAI.AuthenticationError || err instanceof OpenAI.PermissionDeniedError || status === 401 || status === 403) {
+    return {
+      error_type: 'config_error',
+      retryable: false,
+      status: 500,
+      retry_after: null,
+      details: `AI provider authentication/permission error: ${message}`,
+    };
+  }
+
+  if (err instanceof OpenAI.BadRequestError || status === 400 || status === 404 || status === 409 || status === 422) {
+    return {
+      error_type: 'provider_error',
+      retryable: false,
+      status: 502,
+      retry_after: null,
+      details: `AI provider rejected request: ${message}`,
+    };
+  }
+
+  if (err instanceof OpenAI.InternalServerError || (typeof status === 'number' && status >= 500)) {
+    return {
+      error_type: 'provider_error',
+      retryable: true,
+      status: 502,
+      retry_after: null,
+      details: `AI provider server error: ${message}`,
+    };
+  }
+
+  if (err instanceof OpenAI.APIConnectionError) {
+    return {
+      error_type: 'provider_error',
+      retryable: true,
+      status: 502,
+      retry_after: null,
+      details: `AI provider connection error: ${message}`,
+    };
+  }
+
+  return {
+    error_type: 'provider_error',
+    retryable: true,
+    status: 502,
+    retry_after: null,
+    details: `AI provider error: ${message}`,
+  };
+}
+
+function setProviderInvokerForTests(invoker) {
+  invokeProviderChatCompletion = invoker;
+}
+
+function resetProviderInvokerForTests() {
+  invokeProviderChatCompletion = defaultInvokeProviderChatCompletion;
 }
 
 // Wrap a model output payload with server-controlled metadata fields, then
@@ -311,7 +480,7 @@ app.get('/health', (req, res) => {
 });
 
 // POST /api/compare - the main analysis endpoint.
-app.post('/api/compare', async (req, res) => {
+async function handleCompare(req, res) {
   const apiKey = process.env.OPENROUTER_API_KEY;
   const requestIdFromBody = req.body && typeof req.body === 'object' ? req.body.request_id ?? null : null;
 
@@ -389,25 +558,27 @@ app.post('/api/compare', async (req, res) => {
   // 6. Call the provider via the OpenAI-compatible chat completions API.
   let rawText;
   try {
-    const ai = new OpenAI({ apiKey, baseURL: DEFAULT_BASE_URL });
-    const response = await ai.chat.completions.create({
+    const response = await invokeProviderChatCompletion({
+      apiKey,
+      baseURL: DEFAULT_BASE_URL,
       model: DEFAULT_MODEL,
       messages,
     });
-    rawText = response.choices?.[0]?.message?.content ?? '';
+    rawText = extractAssistantText(response.choices?.[0]?.message?.content);
   } catch (err) {
     console.error(`AI call failed for request_id=${request_id}:`, err.message);
-    // Heuristic mapping. Most provider errors should be retried (transient).
-    // 4xx-shaped errors from the SDK typically indicate auth or quota.
-    const isRateLimit = err.status === 429 || /429|rate[- ]?limit/i.test(err.message);
+    const classified = classifyProviderError(err);
     const { body, status } = buildErrorResponse({
       request_id,
       model: DEFAULT_MODEL,
-      error_type: isRateLimit ? 'rate_limited' : 'provider_error',
-      retryable: true,
-      details: `AI provider error: ${err.message}`,
-      status: 502,
+      error_type: classified.error_type,
+      retryable: classified.retryable,
+      details: classified.details,
+      status: classified.status,
     });
+    if (classified.retry_after != null) {
+      res.set('Retry-After', classified.retry_after);
+    }
     return res.status(status).json(body);
   }
 
@@ -447,11 +618,34 @@ app.post('/api/compare', async (req, res) => {
   }
 
   return res.status(200).json(successResponse);
-});
+}
+
+app.post('/api/compare', handleCompare);
 
 // Express 5 auto-catches async route rejections, but having a final handler
 // keeps unexpected errors from leaking stack traces into responses.
 app.use((err, req, res, _next) => {
+  const requestIdFromBody = req.body && typeof req.body === 'object' ? req.body.request_id ?? null : null;
+  if (err?.type === 'entity.parse.failed') {
+    const { body, status } = buildErrorResponse({
+      request_id: requestIdFromBody,
+      error_type: 'schema_invalid',
+      retryable: false,
+      details: 'request body is not valid JSON',
+      status: 400,
+    });
+    return res.status(status).json(body);
+  }
+  if (err?.type === 'entity.too.large') {
+    const { body, status } = buildErrorResponse({
+      request_id: requestIdFromBody,
+      error_type: 'schema_invalid',
+      retryable: false,
+      details: `request body exceeds ${MAX_BODY_BYTES} byte cap`,
+      status: 413,
+    });
+    return res.status(status).json(body);
+  }
   console.error('unhandled error:', err);
   const { body, status } = buildErrorResponse({
     request_id: null,
@@ -460,13 +654,26 @@ app.use((err, req, res, _next) => {
     details: 'unhandled server error; see service logs',
     status: 500,
   });
-  res.status(status).json(body);
+  return res.status(status).json(body);
 });
 
-app.listen(PORT, () => {
-  console.log(`AI analyzer service listening on port ${PORT}`);
-  console.log(`  base_url:       ${DEFAULT_BASE_URL}`);
-  console.log(`  model:          ${DEFAULT_MODEL}`);
-  console.log(`  prompt_sha256:  ${PROMPT_SHA256}`);
-  console.log(`  schemas_sha256: ${SCHEMAS_SHA256}`);
-});
+if (require.main === module) {
+  app.listen(PORT, () => {
+    console.log(`AI analyzer service listening on port ${PORT}`);
+    console.log(`  base_url:       ${DEFAULT_BASE_URL}`);
+    console.log(`  model:          ${DEFAULT_MODEL}`);
+    console.log(`  prompt_sha256:  ${PROMPT_SHA256}`);
+    console.log(`  schemas_sha256: ${SCHEMAS_SHA256}`);
+  });
+}
+
+module.exports = {
+  app,
+  handleCompare,
+  renderSystemPromptTemplate,
+  extractAssistantText,
+  extractRetryAfterHeader,
+  classifyProviderError,
+  setProviderInvokerForTests,
+  resetProviderInvokerForTests,
+};
