@@ -53,8 +53,9 @@ RUN playwright install chromium
 
 FROM dependencies AS runtime
 
-# Create directories for data
-RUN mkdir -p /data/snapshots /data/reports
+# Create canonical artifact roots. Keep these aligned with Settings defaults
+# (test_ui/config.py): baseline/current/comparator/report + runs metadata.
+RUN mkdir -p /data/baseline /data/current /data/comparator /data/report /data/runs
 
 # Copy application code last (this changes most frequently)
 # For development, this will be overridden by volume mount
