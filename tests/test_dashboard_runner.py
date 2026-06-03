@@ -31,6 +31,7 @@ from dashboard.api import runner
 from dashboard.api.runner import (
     _build_command,
     _pgid_alive_and_ours,
+    _refresh_egress_allowlist_for_run,
     _resolve_sites_file,
     _watch,
     pid_start_time,
@@ -195,6 +196,43 @@ def test_build_command_report_passes_comparator_data(db_path):
     assert "enhanced-report" in argv
     assert "--comparator-data" in argv
     assert str(settings.comparator_dir) in argv
+
+
+def test_refresh_egress_allowlist_runs_for_crawl_stages(monkeypatch, tmp_path):
+    calls: list[dict[str, str]] = []
+    sites_file = tmp_path / "sites.yml"
+    sites_file.write_text("sites: []\n", encoding="utf-8")
+
+    def fake_configure(env: dict[str, str] | None = None) -> None:
+        assert env is not None
+        calls.append(env)
+
+    monkeypatch.setenv("AFR_EGRESS_ALLOWLIST_ENABLED", "true")
+    monkeypatch.delenv("AFR_EGRESS_SITES_FILE", raising=False)
+    monkeypatch.setattr(runner.network_sandbox, "configure_from_env", fake_configure)
+
+    _refresh_egress_allowlist_for_run("baseline", sites_file)
+    _refresh_egress_allowlist_for_run("current", sites_file)
+
+    assert [call["AFR_EGRESS_SITES_FILE"] for call in calls] == [
+        str(sites_file),
+        str(sites_file),
+    ]
+
+
+def test_refresh_egress_allowlist_skips_non_crawl_stages(monkeypatch, tmp_path):
+    calls = 0
+
+    def fake_configure(env: dict[str, str] | None = None) -> None:
+        nonlocal calls
+        calls += 1
+
+    monkeypatch.setattr(runner.network_sandbox, "configure_from_env", fake_configure)
+
+    _refresh_egress_allowlist_for_run("comparator", tmp_path / "sites.yml")
+    _refresh_egress_allowlist_for_run("report", tmp_path / "sites.yml")
+
+    assert calls == 0
 
 
 # --------------------------------------------------------------------------- #

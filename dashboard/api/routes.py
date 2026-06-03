@@ -15,6 +15,7 @@ from importlib.resources import as_file, files
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Response
+from pydantic import ValidationError
 
 from test_ui.common.sites import (
     SiteNotFound,
@@ -71,7 +72,10 @@ def get_sites() -> list[SiteOut]:
 def post_sites(payload: SiteCreateIn) -> SiteOut:
     """Append a new site."""
     sites_path = _sites_path()
-    site = add_site(sites_path, name=payload.name, url=payload.url)
+    try:
+        site = add_site(sites_path, name=payload.name, url=payload.url)
+    except ValidationError as e:
+        raise HTTPException(status_code=422, detail=e.errors(include_context=False)) from e
     return SiteOut(id=site.id, name=site.name, url=site.url)
 
 
@@ -85,13 +89,11 @@ def post_sites(payload: SiteCreateIn) -> SiteOut:
 )
 def post_sites_bulk(payload: SiteBulkCreateIn) -> list[SiteOut]:
     """Append multiple sites at once. ids + names auto-generated."""
-    from pydantic import ValidationError
-
     sites_path = _sites_path()
     try:
         sites = bulk_add_sites(sites_path, payload.urls)
     except ValidationError as e:
-        raise HTTPException(status_code=422, detail=e.errors()) from e
+        raise HTTPException(status_code=422, detail=e.errors(include_context=False)) from e
     return [SiteOut(id=s.id, name=s.name, url=s.url) for s in sites]
 
 
@@ -110,6 +112,8 @@ def patch_site(site_id: str, payload: SiteUpdateIn) -> SiteOut:
         site = update_site(sites_path, site_id, name=payload.name, url=payload.url)
     except SiteNotFound as e:
         raise HTTPException(status_code=404, detail=str(e)) from e
+    except ValidationError as e:
+        raise HTTPException(status_code=422, detail=e.errors(include_context=False)) from e
     return SiteOut(id=site.id, name=site.name, url=site.url)
 
 

@@ -186,6 +186,15 @@ def test_post_sites_422_for_empty_url(sites_client):
     assert r.status_code == 422
 
 
+def test_post_sites_422_for_private_network_url(sites_client):
+    """SSRF protection failures from the persistence layer surface as 422."""
+    r = sites_client.post(
+        "/api/sites", json={"name": "Router", "url": "http://192.168.1.1"}
+    )
+    assert r.status_code == 422
+    assert "not allowed" in str(r.json()["detail"])
+
+
 def test_post_sites_422_for_missing_name(sites_client):
     r = sites_client.post("/api/sites", json={"url": "https://x.example"})
     assert r.status_code == 422
@@ -227,6 +236,17 @@ def test_post_sites_bulk_422_for_invalid_url_aborts_batch(sites_client):
     assert len(after) == len(before)
 
 
+def test_post_sites_bulk_422_for_private_network_url_aborts_batch(sites_client):
+    before = sites_client.get("/api/sites").json()
+    r = sites_client.post(
+        "/api/sites/bulk",
+        json={"urls": ["https://good.example", "http://169.254.169.254/latest"]},
+    )
+    assert r.status_code == 422
+    after = sites_client.get("/api/sites").json()
+    assert len(after) == len(before)
+
+
 def test_post_sites_422_for_extra_field(sites_client):
     """extra='forbid' on SiteCreateIn surfaces typos as 422."""
     r = sites_client.post(
@@ -256,6 +276,11 @@ def test_patch_site_no_op_when_body_empty(sites_client):
 
 def test_patch_site_422_for_empty_url(sites_client):
     r = sites_client.patch("/api/sites/a", json={"url": ""})
+    assert r.status_code == 422
+
+
+def test_patch_site_422_for_private_network_url(sites_client):
+    r = sites_client.patch("/api/sites/a", json={"url": "http://127.0.0.1/admin"})
     assert r.status_code == 422
 
 

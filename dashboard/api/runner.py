@@ -44,6 +44,7 @@ from typing import Callable
 
 from loguru import logger
 
+from test_ui import network_sandbox
 from test_ui.config import settings
 
 from .db import (
@@ -313,6 +314,21 @@ def _build_command(
     return argv
 
 
+def _refresh_egress_allowlist_for_run(kind: str, sites_file: Path) -> None:
+    """Refresh Docker egress allowlist before crawl stages.
+
+    Dashboard users can edit `sites.yml` while the container is already
+    running. The startup firewall would otherwise miss newly-added site hosts
+    until a restart. Comparator/report stages don't crawl site URLs, so they
+    don't need this refresh.
+    """
+    if kind not in {"baseline", "current"}:
+        return
+    env = dict(os.environ)
+    env.setdefault("AFR_EGRESS_SITES_FILE", str(sites_file))
+    network_sandbox.configure_from_env(env)
+
+
 async def spawn_run(
     *,
     db_id: int,
@@ -339,6 +355,8 @@ async def spawn_run(
     can still be promoted; recovery's `_pgid_alive_and_ours` will correctly
     refuse to kill an already-dead leader.
     """
+    sites_file = _resolve_sites_file()
+    _refresh_egress_allowlist_for_run(kind, sites_file)
     argv = _build_command(kind=kind, run_id=run_id)
     log_path.parent.mkdir(parents=True, exist_ok=True)
     log_fd = log_path.open("ab")
