@@ -38,7 +38,7 @@ FROM python:3.13 AS dependencies
 # headless chromium, opencv-python-headless, Pillow / scikit-image).
 RUN apt-get update && apt-get install -y --no-install-recommends \
   build-essential \
-  curl git ca-certificates \
+  curl git ca-certificates iptables \
   libjpeg-dev libpng-dev libwebp-dev \
   libglib2.0-0 libgomp1 \
   libnspr4 libnss3 libdbus-1-3 \
@@ -72,6 +72,8 @@ FROM dependencies AS runtime
 
 COPY dashboard ./dashboard
 COPY test_ui ./test_ui
+COPY docker/entrypoint.sh ./docker/entrypoint.sh
+RUN chmod +x ./docker/entrypoint.sh
 
 # Pull in the SPA bundle from stage 1. The dashboard's `mount_spa`
 # resolves `dashboard/web/dist` relative to `dashboard/api/spa.py`,
@@ -84,4 +86,5 @@ ENV AFR_DASHBOARD_PORT=8080
 
 EXPOSE 8080
 
+ENTRYPOINT ["/app/docker/entrypoint.sh"]
 CMD ["python", "-m", "dashboard.api"]

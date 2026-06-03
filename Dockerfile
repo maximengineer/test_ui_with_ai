@@ -3,7 +3,7 @@ FROM python:3.13 AS dependencies
 # Install system dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
   build-essential \
-  curl git ca-certificates \
+  curl git ca-certificates iptables \
   # Dependencies for Pillow and scikit-image
   libjpeg-dev libpng-dev libwebp-dev \
   # Minimal system libraries for opencv-python-headless
@@ -40,7 +40,7 @@ COPY pyproject.toml poetry.lock* ./
 
 # Install Python dependencies in a separate layer.
 # `--no-root` skips installing the project itself; source is COPY'd into
-# the runtime stage below and the entry point (`python -m test_ui.cli`)
+# the runtime stage below and the entry point (`python -m test_ui`)
 # finds it via WORKDIR. Required because the project's `[project].name`
 # (`ai-frontend-regression-tester`) doesn't match either Python package
 # directory, so Poetry can't install the project without explicit
@@ -60,5 +60,8 @@ RUN mkdir -p /data/baseline /data/current /data/comparator /data/report /data/ru
 # Copy application code last (this changes most frequently)
 # For development, this will be overridden by volume mount
 COPY test_ui ./test_ui
+COPY docker/entrypoint.sh ./docker/entrypoint.sh
+RUN chmod +x ./docker/entrypoint.sh
 
-ENTRYPOINT ["python", "-m", "test_ui.cli"]
+ENTRYPOINT ["/app/docker/entrypoint.sh"]
+CMD ["tail", "-f", "/dev/null"]

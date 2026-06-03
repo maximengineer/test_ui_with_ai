@@ -1,0 +1,12 @@
+services:
+  test-ui:
+    # Required when AFR_EGRESS_ALLOWLIST_ENABLED=true. The entrypoint programs
+    # iptables inside this container's network namespace.
+    cap_add:
+      - NET_ADMIN
+
+  dashboard:
+    # Dashboard-spawned crawler subprocesses share this container network
+    # namespace, so the startup firewall covers the dashboard workflow.
+    cap_add:
+      - NET_ADMIN

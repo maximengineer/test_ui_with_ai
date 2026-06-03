@@ -19,6 +19,13 @@ services:
       # comparator/report would write to /app/data/... (ephemeral writable layer)
       # instead of the mounted /data, and outputs would be lost on container exit.
       - AFR_DATA_ROOT=/data
+      # Optional Docker egress allowlist. These are listed explicitly so
+      # `export AFR_EGRESS_...` in the operator shell reaches containers;
+      # Compose does not pass arbitrary host env vars by default.
+      - AFR_EGRESS_ALLOWLIST_ENABLED=${AFR_EGRESS_ALLOWLIST_ENABLED:-false}
+      - AFR_EGRESS_ALLOWLIST=${AFR_EGRESS_ALLOWLIST:-}
+      - AFR_EGRESS_ALLOWLIST_INCLUDE_SITES=${AFR_EGRESS_ALLOWLIST_INCLUDE_SITES:-true}
+      - AFR_EGRESS_SITES_FILE=${AFR_EGRESS_SITES_FILE:-}
     depends_on:
       ai-analyzer:
         condition: service_healthy
@@ -78,6 +85,11 @@ services:
       - AFR_DATA_ROOT=/data
       - AFR_DASHBOARD_BIND=0.0.0.0
       - AFR_DASHBOARD_PORT=8080
+      # Optional Docker egress allowlist. Keep in sync with test-ui.
+      - AFR_EGRESS_ALLOWLIST_ENABLED=${AFR_EGRESS_ALLOWLIST_ENABLED:-false}
+      - AFR_EGRESS_ALLOWLIST=${AFR_EGRESS_ALLOWLIST:-}
+      - AFR_EGRESS_ALLOWLIST_INCLUDE_SITES=${AFR_EGRESS_ALLOWLIST_INCLUDE_SITES:-true}
+      - AFR_EGRESS_SITES_FILE=${AFR_EGRESS_SITES_FILE:-}
       # Vite CORS rules. Safe to leave on inside the container (the browser
       # only sends credentials when the origin matches localhost:5173 anyway,
       # and the production deployment serves the SPA same-origin).

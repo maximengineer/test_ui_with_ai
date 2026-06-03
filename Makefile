@@ -31,19 +31,27 @@ report-date:
 
 # Clean baseline
 clean-baseline:
-	rm -rf -- data/baseline
+	@if ! rm -rf -- data/baseline 2>/dev/null; then \
+		docker compose run --rm --no-deps --entrypoint rm test-ui -rf /data/baseline; \
+	fi
 
 # Clean current data
 clean-current:
-	rm -rf -- data/current
+	@if ! rm -rf -- data/current 2>/dev/null; then \
+		docker compose run --rm --no-deps --entrypoint rm test-ui -rf /data/current; \
+	fi
 
 # Clean comparator data
 clean-comparator:
-	rm -rf -- data/comparator
+	@if ! rm -rf -- data/comparator 2>/dev/null; then \
+		docker compose run --rm --no-deps --entrypoint rm test-ui -rf /data/comparator; \
+	fi
 
 # Clean reports
 clean-reports:
-	rm -rf -- data/report
+	@if ! rm -rf -- data/report 2>/dev/null; then \
+		docker compose run --rm --no-deps --entrypoint rm test-ui -rf /data/report; \
+	fi
 
 clean-all:
 	@if [ "$(CONFIRM_CLEAN_ALL)" != "1" ]; then \
@@ -51,7 +59,9 @@ clean-all:
 		echo "Re-run with: make clean-all CONFIRM_CLEAN_ALL=1"; \
 		exit 1; \
 	fi
-	rm -rf -- data
+	@if ! rm -rf -- data 2>/dev/null; then \
+		docker compose run --rm --no-deps --entrypoint rm test-ui -rf /data; \
+	fi
 
 # === Testing ===
 
@@ -65,14 +75,14 @@ audit:
 
 # Test locally without Docker (for debugging) - create baseline
 test-local-baseline:
-	.venv/bin/python -m test_ui.cli --sites-file test_ui/sites.yml snapshot --output data/baseline
+	.venv/bin/python -m test_ui --sites-file test_ui/sites.yml snapshot --output data/baseline
 
 # Test locally without Docker (for debugging) - create current
 test-local-current:
-	.venv/bin/python -m test_ui.cli --sites-file test_ui/sites.yml current --output data/current
+	.venv/bin/python -m test_ui --sites-file test_ui/sites.yml current --output data/current
 
 test-local-comparator:
-	.venv/bin/python -m test_ui.cli --sites-file test_ui/sites.yml compare --baseline data/baseline --current data/current
+	.venv/bin/python -m test_ui --sites-file test_ui/sites.yml compare --baseline data/baseline --current data/current
 
 # Test locally - generate enhanced report (requires AI analyzer running)
 test-local-report:
@@ -81,7 +91,7 @@ test-local-report:
 	@echo "Waiting for AI analyzer to be ready..."
 	@sleep 5
 	@echo "Generating enhanced report..."
-	AFR_AI_ANALYZER_SERVICE_URL=http://localhost:3000 .venv/bin/python -m test_ui.cli --sites-file test_ui/sites.yml enhanced-report --comparator-data data/comparator
+	AFR_AI_ANALYZER_SERVICE_URL=http://localhost:3000 .venv/bin/python -m test_ui --sites-file test_ui/sites.yml enhanced-report --comparator-data data/comparator
 	@echo "Enhanced report generated!"
 
 # Test locally - generate report from specific date
@@ -92,7 +102,7 @@ test-local-report-date:
 	@echo "Waiting for AI analyzer to be ready..."
 	@sleep 5
 	@echo "Generating enhanced report for $(DATE)..."
-	AFR_AI_ANALYZER_SERVICE_URL=http://localhost:3000 .venv/bin/python -m test_ui.cli --sites-file test_ui/sites.yml enhanced-report --comparator-data data/comparator --date $(DATE)
+	AFR_AI_ANALYZER_SERVICE_URL=http://localhost:3000 .venv/bin/python -m test_ui --sites-file test_ui/sites.yml enhanced-report --comparator-data data/comparator --date $(DATE)
 	@echo "Enhanced report for $(DATE) generated!"
 
 # Test AI Analyzer service
@@ -107,7 +117,7 @@ test-full:
 	$(MAKE) compare
 	$(MAKE) report
 
-# Full local test cycle  
+# Full local test cycle
 test-local-full:
 	$(MAKE) clean-all CONFIRM_CLEAN_ALL=1
 	$(MAKE) test-local-baseline
@@ -119,7 +129,7 @@ test-local-full:
 test-local-report-with-ai:
 	@echo "Testing with AI analyzer connection..."
 	@if ! curl -s http://localhost:3000/health > /dev/null; then echo "AI analyzer not running on localhost:3000. Start it first."; exit 1; fi
-	AFR_AI_ANALYZER_SERVICE_URL=http://localhost:3000 .venv/bin/python -m test_ui.cli --sites-file test_ui/sites.yml enhanced-report --comparator-data data/comparator
+	AFR_AI_ANALYZER_SERVICE_URL=http://localhost:3000 .venv/bin/python -m test_ui --sites-file test_ui/sites.yml enhanced-report --comparator-data data/comparator
 	@echo "Enhanced report with AI analysis completed!"
 
 # Quick test with existing data
@@ -179,10 +189,9 @@ dashboard-down:
 # change between runs). See `scripts/tamper_baseline.py` docstring for
 # the full per-pattern audit table + workflow.
 #
-# Pipes the script through `docker exec -i python -` because the baseline
-# dirs are owned by `root` (the dashboard's subprocess writes them as
-# root inside the container). Requires `make dashboard-docker` to have
-# the dashboard container running.
+# Pipes the script through the `test-ui` Compose service so it writes
+# through the same `/data` bind mount as the snapshot/current/compare
+# workflow. This does not require the dashboard container to be running.
 #
 # After running, in the dashboard at /runs:
 #   1. Check today's session
@@ -191,7 +200,7 @@ dashboard-down:
 # Then audit /reports against the manifest the script printed.
 tamper-baseline:
 	@cat scripts/tamper_baseline.py \
-	  | docker exec -i test_ui_with_ai-dashboard-1 python -
+	  | docker compose run -T --rm --no-deps --entrypoint python test-ui -
 
 # Reap orphan artifacts that survived deletion (e.g. `.run.json` files
 # whose runs were sync'd from manifests then deleted, empty date dirs
@@ -218,7 +227,7 @@ help:
 	@echo "=== AI-Powered UI Regression Testing Makefile ==="
 	@echo ""
 	@echo "🔄 WORKFLOW COMMANDS:"
-	@echo "  baseline          - Step 1: Create baseline snapshots"  
+	@echo "  baseline          - Step 1: Create baseline snapshots"
 	@echo "  current           - Step 2: Create current snapshots"
 	@echo "  compare           - Step 3: Compare baseline vs current"
 	@echo "  report            - Step 4: Generate enhanced AI report (Docker)"
@@ -234,7 +243,7 @@ help:
 	@echo ""
 	@echo "🔄 FULL TESTING CYCLES:"
 	@echo "  test-full          - Complete cycle (baseline → current → compare → report)"
-	@echo "  test-local-full    - Complete local cycle (no Docker for main steps)"  
+	@echo "  test-local-full    - Complete local cycle (no Docker for main steps)"
 	@echo "  test-existing-data - Quick test with existing comparator data"
 	@echo ""
 	@echo "🧹 CLEANUP COMMANDS:"
