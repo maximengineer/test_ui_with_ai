@@ -75,6 +75,16 @@ class Settings(BaseSettings):
     # (writes ai_disabled.json marker files; useful for sensitive sites).
     # Phase A.1.9 wires this into the report generator.
     ai_enabled: bool = True
+    # Mask obvious secrets in structured HTML/CSS/JS diff strings before
+    # sending them to the AI analyzer.
+    ai_redact_structured_data: bool = True
+    # Keep screenshots in local report artifacts, but omit their base64 bodies
+    # from AI requests. Useful when text diffs may be sent to an AI provider
+    # but visual page content must remain local.
+    ai_redact_screenshots: bool = False
+    # Persist redacted structured data into report artifacts. Comparator/crawl
+    # source artifacts remain raw so diff behavior stays unchanged.
+    report_redact_structured_data: bool = True
     # Concurrency cap for AI requests (Phase A.1.10). Default 3.
     ai_concurrency: int = 3
     # Maximum dimension (width or height) for screenshots sent to the AI
@@ -82,6 +92,17 @@ class Settings(BaseSettings):
     # base64, burning quota and latency. 800 px preserves enough detail for
     # visual change detection while cutting payload size by ~60-80%.
     ai_max_screenshot_dimension: int = 800
+
+    # Dashboard/operator URL safety. False blocks private/link-local/loopback
+    # targets in sites.yml to reduce SSRF risk. Set true only for intentional
+    # internal-site testing in a trusted environment.
+    allow_private_site_urls: bool = False
+    # Crawler-time URL safety checks catch DNS-resolved private targets and
+    # redirect chains. Static sites.yml validation intentionally avoids these
+    # network calls; the crawler performs them at fetch time.
+    site_url_check_dns: bool = True
+    site_url_check_redirects: bool = True
+    site_url_redirect_limit: int = 5
 
     model_config = SettingsConfigDict(
         env_file=".env",
