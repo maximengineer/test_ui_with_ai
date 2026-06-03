@@ -18,7 +18,10 @@ severity rollup.
 dashboard/
 ├── api/        # FastAPI backend
 │   ├── main.py     # app factory + lifespan
-│   ├── routes.py   # sites + runs + reports + health (single file for now)
+│   ├── routes.py   # sites router + route composition
+│   ├── routes_runs.py
+│   ├── routes_reports.py
+│   ├── routes_health.py
 │   ├── runner.py   # subprocess job runner: spawn, watch, recover
 │   ├── db.py       # SQLite schema + migrations + row helpers
 │   ├── sync.py     # backfill `runs` table from on-disk manifests
@@ -203,7 +206,7 @@ not back up the baseline because re-snapshotting from gov.ie is the
 faster path to a clean state. See the script's docstring for full
 per-pattern details and override env vars.
 
-## Known limitations (planned for later milestones)
+## Known limitations
 
 - **No automatic retention daemon.** Pruning is operator-triggered via
   `make prune-runs` (or `scripts/prune_runs.py` directly). There is still
@@ -211,6 +214,13 @@ per-pattern details and override env vars.
 - **No authentication.** The startup warning when binding non-loopback
   is the only access control. MVP-acceptable for localhost / trusted-LAN
   use.
+- **SSRF protection is layered but not absolute.** Operator-added URLs block
+  private/link-local/loopback IP literals and localhost hostnames by default,
+  with `AFR_ALLOW_PRIVATE_SITE_URLS=true` as an explicit override for trusted
+  internal-site tests. Crawler-time checks also validate DNS-resolved private
+  targets and redirect chains. Docker runs can additionally enable container
+  egress allowlisting with `AFR_EGRESS_ALLOWLIST_ENABLED=true` plus
+  `COMPOSE_FILE=docker-compose.yml:docker-compose.egress.yml`.
 - **Image size ~2 GB.** Bundles Playwright Chromium because the spawned
   subprocesses crawl from inside the dashboard container. A
   separate-container architecture is possible but much more complex.

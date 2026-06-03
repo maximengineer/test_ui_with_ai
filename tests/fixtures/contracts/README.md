@@ -1,6 +1,6 @@
 # Cross-language schema contract fixtures
 
-Used by `tests/test_contract_smoke.py` (Phase A.1.6) and the future Phase A.4 contract matrix to verify Pydantic and ajv agree on the same input.
+Used by contract tests to verify Pydantic and ajv agree on the same input.
 
 ## Layout
 

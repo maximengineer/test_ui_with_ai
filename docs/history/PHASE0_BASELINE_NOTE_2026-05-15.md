@@ -1,7 +1,9 @@
 # Phase 0 Baseline Note (2026-05-15)
 
-Scope: record baseline metrics + verification gates for
-`docs/ARCHITECTURE_IMPROVEMENT_PLAN.md` Phase 0.
+Scope: record baseline metrics + verification gates for the architecture
+improvement pass that was later consolidated into `ARCHITECTURE.md` and
+`BACKLOG.md`. The original multi-milestone context remains archived in
+`docs/history/REFACTOR_AND_DASHBOARD_PLAN.md`.
 
 ## Environment Snapshot
 

@@ -3,7 +3,6 @@
 System-level tour of the AI-assisted UI regression tool. Read this first
 to orient. For *how to run it* see [README.md](README.md). For *known
 follow-ups and intentional out-of-scope items* see [BACKLOG.md](BACKLOG.md).
-For *rules an AI agent must follow when editing the code* see [CLAUDE.md](CLAUDE.md).
 The decision log from when the current shape was being built is archived
 at [docs/history/REFACTOR_AND_DASHBOARD_PLAN.md](docs/history/REFACTOR_AND_DASHBOARD_PLAN.md).
 
@@ -43,7 +42,7 @@ expects you to invoke them in order.
 | [schemas/](schemas/) | **Generated** JSON Schema files. Cross-language contract (Pydantic → ajv). Don't edit by hand. | [schemas/README.md](schemas/README.md) |
 | [scripts/](scripts/) | One-off operator utilities: schema export, data-layout migrations, baseline tampering for framework validation, orphan cleanup. | one docstring per script |
 | [tests/](tests/) | Pytest suite. `not slow` runs in <30s; `slow` adds OpenCV + golden tests (~17s more). Goldens in `tests/fixtures/golden/`. | [pyproject.toml](pyproject.toml) `[tool.pytest.ini_options]` |
-| [docs/](docs/) | Internal docs: input data shapes, crawler determinism baseline. | [docs/data_shapes.md](docs/data_shapes.md), [docs/determinism.md](docs/determinism.md) |
+| [docs/](docs/) | Internal docs: input data shapes, crawler determinism baseline, historical decision logs. | [docs/data_shapes.md](docs/data_shapes.md), [docs/determinism.md](docs/determinism.md), [docs/history/](docs/history/) |
 | [data/](data/) | Per-run artifact tree. Layout: `data/<kind>/<DD-MM-YYYY>/<run_id>/<site_id>/`. Plus `data/runs/<id>.run.json` operator records and `data/dashboard.db` SQLite. | this file ("Data layout") |
 
 ---
@@ -199,3 +198,24 @@ Things you might expect to find but don't:
 - **Windows support for the dashboard.** The job runner reads `/proc/<pid>/stat` for PID-recycling defense. CLI works on macOS; dashboard is Linux-only (or Linux-in-Docker).
 
 The full deferred list is in [BACKLOG.md "Intentionally out of scope"](BACKLOG.md#intentionally-out-of-scope).
+
+---
+
+## Current Improvement Priorities
+
+The architecture is functional, but the next improvements should stay focused
+on correctness, safety, and maintainability rather than another broad rewrite.
+The active source of truth for deferred work is [BACKLOG.md](BACKLOG.md).
+
+| Priority | Area | Why it matters |
+|---|---|---|
+| 1 | Security signal extraction and deterministic report floors | AI explanations can under-rate security-sensitive diffs. Keep expanding structured HTML/CSS/JS detectors and report-side floors with focused tests. |
+| 2 | Dashboard-triggered crawl safety | Static URL validation blocks private/link-local/loopback targets by default. Crawler-time preflight also checks DNS-resolved private targets and redirect chains before browser/resource fetches. Docker runs can additionally enable container-level egress allowlisting with `AFR_EGRESS_ALLOWLIST_ENABLED=true` and `docker-compose.egress.yml`. |
+| 3 | Sensitive artifact controls | Structured text diffs are redacted for obvious secrets before AI calls and report persistence; `AFR_AI_REDACT_SCREENSHOTS=true` omits screenshot base64 from AI requests. Raw crawl/comparator artifacts remain unredacted; use `AFR_AI_ENABLED=false` unless approved controls exist. |
+| 4 | Remaining hotspot decomposition | Avoid new god objects. Current hotspots are `dashboard/api/db.py`, `dashboard/api/runner.py`, `test_ui/crawler/engine.py`, and large React page modules. |
+| 5 | Frontend/backend contract drift | Keep OpenAPI snapshot checks and generated TypeScript types current; avoid hand-written literal unions where generated types can carry the contract. |
+| 6 | Crawler determinism | Improve noise controls only when a real false-positive pattern appears. The current baseline is documented in [docs/determinism.md](docs/determinism.md). |
+
+Do not create a second architecture plan document for this list. Add concrete
+future work to [BACKLOG.md](BACKLOG.md), and update this file only when the
+implemented architecture changes.

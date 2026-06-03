@@ -5,7 +5,53 @@ Extracted from `REFACTOR_AND_DASHBOARD_PLAN.md` once Milestones A/B/C
 shipped (full historical plan archived under [docs/history/](docs/history/)).
 
 For *system architecture* see [ARCHITECTURE.md](ARCHITECTURE.md).
-For *operating instructions to AI agents editing this code* see [CLAUDE.md](CLAUDE.md).
+
+---
+
+## Architecture improvement backlog
+
+These are the current follow-ups after the main refactor phases. Add new
+architecture work here, not as a second architecture plan file.
+
+### Security checks and privacy hardening
+
+1. **SSRF hardening beyond static URL validation.**
+   - Current behavior blocks private/link-local/loopback IP literals and localhost-style hostnames by default.
+   - Crawler-time preflight checks DNS-resolved private targets and redirect chains before browser/resource fetches.
+   - Docker runs can enable container-level egress allowlisting with `AFR_EGRESS_ALLOWLIST_ENABLED=true`.
+   - Remaining risk: host-native local runs do not get a repo-managed firewall, and browser-level JavaScript navigation can still fail captures if required destinations are not allowlisted.
+2. **Sensitive artifact controls beyond structured-text redaction.**
+   - Current behavior masks obvious secrets in structured DOM/CSS/JS diff strings before AI calls and report persistence.
+   - `AFR_AI_REDACT_SCREENSHOTS=true` keeps screenshots out of AI payloads while preserving local report screenshots.
+   - Remaining risk: raw captured pages/comparator artifacts, screenshots in local reports, and non-obvious secrets can still contain PII or confidential content.
+   - Add raw-artifact redaction, OCR/region redaction, or explicit site data allow-listing before using the tool on confidential pages.
+3. **Deterministic security floors.**
+   - Continue expanding report-side severity floors for structured HTML/CSS/JS markers.
+   - Prioritize tests for attacker URLs, inline event handlers, CSP/SRI stripping, hidden content, JavaScript execution sinks, cookie/storage/network markers, and visual-only changes.
+4. **Prompt/rule single source of truth.**
+   - The analyzer prompt and `server.js` prioritization rules should be generated from shared constants so severity ordering cannot drift silently.
+
+### Refactoring and simplification
+
+1. **Crawler engine split.**
+   - `test_ui/crawler/engine.py` still owns capture, asset extraction, persistence, and metadata concerns.
+   - Split only when adding crawler behavior; preserve artifact layout and naming.
+2. **Dashboard DB/runner services.**
+   - `dashboard/api/db.py` and `dashboard/api/runner.py` are still large but cohesive.
+   - Split around retention, migration, subprocess spawning, and recovery only when tests can pin behavior.
+3. **Large React pages.**
+   - Continue decomposing `SitesPage`, `ReportsPage`, and `RunsPageView` into view, state, and action modules.
+   - Keep generated OpenAPI types as the contract source instead of adding manual enum/string unions.
+
+### Determinism and noise reduction
+
+1. Improve crawler determinism only in response to observed noise patterns:
+   - animation disabling
+   - dynamic-region masking
+   - cookie/session stabilization
+   - font consistency
+   - stricter timezone/runtime controls
+2. Keep SSIM-only visual diffing unless real false positives prove color-aware diffing is worth the extra complexity.
 
 ---
 
@@ -53,8 +99,7 @@ Things you might expect but won't find. Listed so they aren't re-litigated each 
 - **Subprocess re-attachment after dashboard restart.** Restart marks running rows `interrupted`; would need wrapper-script + exit-marker design.
 - **Run cancellation API** (`POST /api/runs/{id}/cancel`).
 - **Playwright browser tests for the dashboard.** API-level smoke only.
-- **DOM/screenshot redaction.** Opt-out via `AFR_AI_ENABLED=false` instead.
-- **SSRF protection on dashboard-triggered crawls** (block link-local, RFC1918, metadata endpoints).
+- **Full raw-artifact redaction as a default-on feature.** AI requests and report `structured_data.json` get best-effort structured-text masking, and `AFR_AI_REDACT_SCREENSHOTS=true` can keep screenshots out of AI payloads. Raw crawler/comparator DOM, CSS, JS, and screenshot artifacts remain unredacted. For sensitive pages, the safest privacy control is explicit opt-out via `AFR_AI_ENABLED=false`.
 - **`RunExecutor` abstract interface.** No second implementation in sight; YAGNI.
 - **`run_events` audit table.** Per-run log file is sufficient.
 - **Windows support for the dashboard subprocess job runner.** CLI works on macOS; dashboard is Linux-only (or Linux-in-Docker) because it reads `/proc/<pid>/stat`.

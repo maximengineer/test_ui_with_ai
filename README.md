@@ -21,11 +21,15 @@ A tool for capturing baseline / current snapshots of web pages, comparing visual
 
 - AI output should not be treated as an unattended deployment gate yet; use it as assisted analysis, not automated approval.
 - Crawler determinism is intentionally partial (animations/dynamic content/timezone variance can still introduce noise). See [`docs/determinism.md`](docs/determinism.md).
-- Legacy compatibility paths still exist for historical layouts/configs; see [`BACKLOG.md`](BACKLOG.md) and [`docs/ARCHITECTURE_IMPROVEMENT_PLAN.md`](docs/ARCHITECTURE_IMPROVEMENT_PLAN.md).
+- Remaining architecture/security follow-ups are tracked in [`BACKLOG.md`](BACKLOG.md). The live architecture source is [`ARCHITECTURE.md`](ARCHITECTURE.md); historical plans live under [`docs/history/`](docs/history/).
 
 ## Privacy and data sent to the AI provider
 
 When AI analysis is enabled, screenshots and structured page data (DOM, CSS, JS diffs) are sent to the configured AI provider. **Do not run this against pages containing secrets, regulated data, customer PII, or confidential internal content** unless you have approved data-processing controls in place.
+
+By default, obvious secrets in structured text diffs are masked before the AI request (`AFR_AI_REDACT_STRUCTURED_DATA=true`) and before `data/report/.../structured_data.json` is written (`AFR_REPORT_REDACT_STRUCTURED_DATA=true`). Screenshots are sent to AI unless `AFR_AI_REDACT_SCREENSHOTS=true`, which keeps local report screenshots but omits screenshot base64 from the AI request.
+
+Raw crawler/comparator artifacts can still contain page DOM, CSS, JS, and screenshots. For sensitive pages, disable AI calls entirely unless approved controls are in place.
 
 To disable AI calls entirely (the report generator will still run; URLs get an `ai_disabled.json` marker file instead of an `ai_analysis.json`):
 
@@ -95,14 +99,54 @@ All runtime settings are read from environment variables prefixed `AFR_` (or fro
 | `AFR_AI_BASE_URL` | `https://openrouter.ai/api/v1` | OpenAI-compatible base URL. Override to point at a different provider. |
 | `AFR_AI_ANALYZER_SERVICE_URL` | `http://ai-analyzer:3000` | URL of the Node AI service. Set to `http://localhost:3000` for local dev. |
 | `AFR_AI_ENABLED` | `true` | Set `false` to skip AI calls entirely. |
+| `AFR_AI_REDACT_STRUCTURED_DATA` | `true` | Mask obvious secrets in structured HTML/CSS/JS diff strings before AI analysis. |
+| `AFR_AI_REDACT_SCREENSHOTS` | `false` | Keep local report screenshots but omit screenshot base64 from AI requests. |
+| `AFR_REPORT_REDACT_STRUCTURED_DATA` | `true` | Mask obvious secrets in `data/report/.../structured_data.json`. Comparator/crawler artifacts remain raw. |
 | `AFR_AI_CONCURRENCY` | `3` | Max concurrent AI requests per orchestration. |
 | `AFR_DATA_ROOT` | `data` | Root directory for all artifacts. Per-kind paths derive from this unless overridden. |
 | `AFR_BASELINE_DIR`, `AFR_CURRENT_DIR`, `AFR_COMPARATOR_DIR`, `AFR_REPORT_DIR` | derived from `AFR_DATA_ROOT` | Override individual artifact roots if needed. |
 | `AFR_VIEWPORT_WIDTH`, `AFR_VIEWPORT_HEIGHT` | `1920`, `1080` | Browser viewport. |
 | `AFR_BROWSER_HEADLESS` | `true` | Headless browser mode. |
 | `AFR_TIMEZONE` | `Europe/Dublin` | Timezone for date directory naming. |
+| `AFR_ALLOW_PRIVATE_SITE_URLS` | `false` | Allow private/link-local/loopback crawl targets in `sites.yml`. Keep false unless intentionally testing internal sites. |
+| `AFR_SITE_URL_CHECK_DNS` | `true` | Before crawling, block public hostnames that resolve to private/reserved IPs. |
+| `AFR_SITE_URL_CHECK_REDIRECTS` | `true` | Before crawling/downloading assets, validate redirect targets. |
+| `AFR_SITE_URL_REDIRECT_LIMIT` | `5` | Maximum redirect hops followed by crawler preflight checks. |
+| `AFR_EGRESS_ALLOWLIST_ENABLED` | `false` | Docker-only: enable container firewall egress allowlisting for `test-ui` and `dashboard`. Requires `docker-compose.egress.yml`. |
+| `AFR_EGRESS_ALLOWLIST` | empty | Comma/space-separated extra hostnames, URLs, IPs, or CIDRs allowed for outbound traffic. Site hosts are included separately by default. |
+| `AFR_EGRESS_ALLOWLIST_INCLUDE_SITES` | `true` | Include exact hosts from `sites.yml` in the Docker egress allowlist. |
+| `AFR_EGRESS_SITES_FILE` | auto | Optional path to the `sites.yml` file used when deriving egress allowlist hosts. |
 
 > **Breaking change:** the previously-supported unprefixed `AI_ANALYZER_SERVICE_URL` is no longer accepted. Use `AFR_AI_ANALYZER_SERVICE_URL`. The application will print a deprecation warning if the old name is set.
+
+### Docker egress allowlist
+
+Set `AFR_EGRESS_ALLOWLIST_ENABLED=true` to make the `test-ui` and `dashboard`
+containers program an `iptables` OUTPUT allowlist at startup. The allowlist
+uses resolved IPs for:
+
+- exact hosts from `sites.yml` (`AFR_EGRESS_ALLOWLIST_INCLUDE_SITES=true`)
+- `AFR_AI_ANALYZER_SERVICE_URL` so reports can reach the internal analyzer
+- extra entries in `AFR_EGRESS_ALLOWLIST` for CDNs/API hosts or CIDRs
+- Docker resolver nameservers and loopback
+
+This is intentionally stricter than crawler URL validation. External assets on
+CDNs will be blocked unless their host/IP/CIDR is added to
+`AFR_EGRESS_ALLOWLIST`.
+
+The sandbox needs `NET_ADMIN` only when enabled, so the base Compose file does
+not grant it. Run with the explicit override:
+
+```bash
+export COMPOSE_FILE=docker-compose.yml:docker-compose.egress.yml
+export AFR_EGRESS_ALLOWLIST_ENABLED=true
+export AFR_EGRESS_ALLOWLIST="cdn.example.com,api.example.com,203.0.113.0/24"
+
+docker compose build test-ui
+make dashboard-build
+```
+
+With `COMPOSE_FILE` exported, existing Make targets use the override too.
 
 ## Troubleshooting AI analysis
 
