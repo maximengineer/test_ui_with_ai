@@ -182,6 +182,8 @@ def compare_key_attributes(
         # 01KR1QKTTJQZJ1FJYECQ1M2W6Q audit fix.
         baseline_normalized = [normalize_volatile_urls(v) for v in baseline_values]
         current_normalized = [normalize_volatile_urls(v) for v in current_values]
+        if sorted(baseline_normalized) == sorted(current_normalized):
+            continue
         matcher = difflib.SequenceMatcher(
             a=baseline_normalized, b=current_normalized, autojunk=False
         )

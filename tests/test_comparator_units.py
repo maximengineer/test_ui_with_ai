@@ -1147,6 +1147,40 @@ def test_compare_key_attributes_aligns_link_href_list_with_added_canonical(
     )
 
 
+def test_compare_key_attributes_ignores_duplicate_href_reordering(tmp_path):
+    """Duplicate link values can move positions without changing behavior.
+
+    This reproduces the site-20 control false positive from audit
+    01KT52N1DC9CGZ61BJF7Q89RDN: the same href appeared as removed from
+    one anchor index and added to another even though the href multiset
+    was unchanged and the screenshot/content were identical.
+    """
+    a = _write_html(
+        tmp_path / "a.html",
+        (
+            "<html><body>"
+            '<a href="/x">one</a>'
+            '<a>plain</a>'
+            '<a href="/x">two</a>'
+            "</body></html>"
+        ),
+    )
+    b = _write_html(
+        tmp_path / "b.html",
+        (
+            "<html><body>"
+            '<a href="/x">one</a>'
+            '<a href="/x">plain</a>'
+            '<a>two</a>'
+            "</body></html>"
+        ),
+    )
+
+    result = dom.compare_dom(a, b)
+
+    assert result["key_attributes"]["changes"] == []
+
+
 # ---------------------------------------------------------------------------
 # change_summary aggregator (Bugs #4 + #5 from audit 01KQX5SV...)
 # ---------------------------------------------------------------------------
