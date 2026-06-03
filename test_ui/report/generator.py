@@ -27,6 +27,29 @@ from ..config import settings
 from ..contracts.ai_contract import AIDisabledMarker, NoChangesMarker
 from . import aggregator, discovery, html_renderer, loader, models
 from .ai_client import AIClient
+from .redaction import redact_structured_data
+from .severity_policy import (
+    _apply_severity_cap_to_response,
+    _apply_severity_floor_to_response,
+    _maximum_business_impact_for_capped_severity,
+    _maximum_severity_from_structured_data,
+    _minimum_severity_from_structured_data,
+    _normalize_business_impact_for_severity,
+    _severity_cap_details,
+    _severity_floor_details,
+    _severity_rank,
+)
+
+__all__ = [
+    "ReportGenerator",
+    "_apply_severity_cap_to_response",
+    "_apply_severity_floor_to_response",
+    "_maximum_business_impact_for_capped_severity",
+    "_maximum_severity_from_structured_data",
+    "_minimum_severity_from_structured_data",
+    "_normalize_business_impact_for_severity",
+    "_synthesize_timeout_response",
+]
 
 
 class ReportGenerator:
@@ -158,7 +181,10 @@ class ReportGenerator:
                 url_data["url_dir"], url_data.get("comparison_data")
             )
             if not any(k.endswith("_b64") for k in screenshots):
-                raise ValueError("No screenshots loaded")
+                logger.warning(
+                    f"Screenshots unavailable for {url_name}; "
+                    "continuing with structured-only AI analysis"
+                )
             timings["load"] = time.perf_counter() - t0
 
             t0 = time.perf_counter()
@@ -169,28 +195,44 @@ class ReportGenerator:
             timings["ai"] = time.perf_counter() - t0
 
             # Post-process: floor severity when security-critical indicators
-            # are present in the diff data. The AI may under-rate changes when
-            # the "direction" is baseline→current (interpreting a tampered
-            # baseline as a "security fix"). The framework treats ANY presence
-            # of attacker domains, injected scripts, CSP stripping, etc. as
-            # suspicious regardless of direction.
+            # are present in the diff data, then cap model-critical output when
+            # deterministic critical evidence is absent. The AI may under-rate
+            # or over-rate changes when the "direction" is baseline→current
+            # (interpreting a tampered baseline as a "security fix"). The
+            # framework treats ANY presence of attacker domains, injected
+            # scripts, CSP stripping, etc. as suspicious regardless of direction.
             # Audit fix: site 8 of 01KRB5GSSM3J76H9Y2MPTZWPS4 was rated SAFE
             # despite injected <script src=attacker.example> and XSS payloads.
             if ai_response.get("result_type") == "analysis_success":
-                min_sev = _minimum_severity_from_structured_data(structured_data)
+                min_sev, floor_reasons = _severity_floor_details(structured_data)
                 current_sev = ai_response.get("overall_severity", "SAFE")
                 if _severity_rank(min_sev) > _severity_rank(current_sev):
                     logger.warning(
                         f"Severity floor triggered for {url_name}: "
                         f"AI rated {current_sev} but diff data requires {min_sev}"
                     )
-                    ai_response["overall_severity"] = min_sev
-                    # Also bump business_impact if it was NONE/LOW
-                    current_impact = ai_response.get("business_impact", "NONE")
-                    if min_sev == "CRITICAL" and current_impact in ("NONE", "LOW"):
-                        ai_response["business_impact"] = "HIGH"
-                    elif min_sev == "WARNING" and current_impact == "NONE":
-                        ai_response["business_impact"] = "MEDIUM"
+                    _apply_severity_floor_to_response(
+                        ai_response, min_sev=min_sev, reasons=floor_reasons
+                    )
+
+                max_sev, cap_reasons = _severity_cap_details(structured_data)
+                current_sev = ai_response.get("overall_severity", "SAFE")
+                if _severity_rank(current_sev) > _severity_rank(max_sev):
+                    logger.warning(
+                        f"Severity cap triggered for {url_name}: "
+                        f"AI rated {current_sev} but diff data allows {max_sev}"
+                    )
+                    max_impact = _maximum_business_impact_for_capped_severity(
+                        structured_data, max_sev
+                    )
+                    _apply_severity_cap_to_response(
+                        ai_response,
+                        max_sev=max_sev,
+                        reasons=cap_reasons,
+                        max_impact=max_impact,
+                    )
+                else:
+                    _normalize_business_impact_for_severity(ai_response)
 
             # Timeout fallback: if the AI never responded with a success,
             # synthesize a severity based on the structured diff data so the
@@ -210,9 +252,14 @@ class ReportGenerator:
                 )
 
             t0 = time.perf_counter()
+            report_structured_data = (
+                redact_structured_data(structured_data)
+                if settings.report_redact_structured_data
+                else structured_data
+            )
             # Persist structured data for HTML rendering / debugging.
             (report_url_dir / "structured_data.json").write_text(
-                json.dumps(structured_data, indent=2, default=str),
+                json.dumps(report_structured_data, indent=2, default=str),
                 encoding="utf-8",
             )
 
@@ -251,11 +298,13 @@ class ReportGenerator:
             return models.build_url_result(
                 url=url_name,
                 ai_analysis=ai_response,
-                structured_data=structured_data,
+                structured_data=report_structured_data,
                 report_path=report_url_dir,
                 processing_status=processing_status,
                 screenshots_available=[
-                    k.replace("_b64", "") for k in screenshots if k.endswith("_b64")
+                    k.removesuffix("_path")
+                    for k in screenshots
+                    if k.endswith("_path")
                 ],
                 timings=timings,
             )
@@ -322,64 +371,6 @@ class ReportGenerator:
         return enhanced_report_path
 
 
-def _severity_rank(sev: str) -> int:
-    """Numeric rank for severity comparison. Higher = more severe."""
-    return {"SAFE": 0, "WARNING": 1, "CRITICAL": 2}.get(sev, 0)
-
-
-def _minimum_severity_from_structured_data(structured_data: dict[str, Any]) -> str:
-    """Scan structured diff data for security-critical indicators.
-
-    Returns the minimum severity that ANY AI verdict for this URL should
-    carry, regardless of the model's own assessment. The model can
-    over-estimate (we never cap it down), but it cannot under-estimate
-    below this floor.
-
-    Indicators mapped:
-      - attacker-controlled domains  → CRITICAL (phishing / supply-chain)
-      - injected <script> tags        → CRITICAL (XSS)
-      - injected <base> / <iframe>    → CRITICAL (URL rewrite / clickjacking)
-      - eval / document.write / innerHTML → CRITICAL (arbitrary code)
-      - CSP stripping / weakening     → WARNING  (defense removal)
-      - onclick / onerror (event handlers) → WARNING (XSS via attribute)
-      - integrity= strip              → WARNING  (SRI bypass)
-      - inline style injection        → WARNING  (visual bypass)
-    """
-    text = json.dumps(structured_data, default=str)
-    text_lower = text.lower()
-
-    # CRITICAL indicators
-    critical_patterns = (
-        "attacker.example",
-        "<script",
-        "<base ",
-        "<iframe",
-        "eval(",
-        "document.write",
-        "innerhtml",
-        "insertadjacenthtml",
-    )
-    for pat in critical_patterns:
-        if pat.lower() in text_lower:
-            return "CRITICAL"
-
-    # WARNING indicators
-    warning_patterns = (
-        "content-security-policy",
-        "onclick",
-        "onerror",
-        "onload",
-        "integrity=",
-        'style="',
-        "style='",
-    )
-    for pat in warning_patterns:
-        if pat.lower() in text_lower:
-            return "WARNING"
-
-    return "SAFE"
-
-
 def _synthesize_timeout_response(
     *, request_id: str | None, structured_data: dict[str, Any]
 ) -> dict[str, Any]:
@@ -389,7 +380,8 @@ def _synthesize_timeout_response(
     so the URL isn't left as a bare error with no actionable classification.
     Audit fix: site 8 of 01KRC46BJQFBSQ4Z6Y2R1EYEVZ.
     """
-    min_sev = _minimum_severity_from_structured_data(structured_data)
+    min_sev, reasons = _severity_floor_details(structured_data)
+    reason_text = "; ".join(reasons) if reasons else "no security or visual floor markers"
     return {
         "schema_version": "2026-04-30.1",
         "result_type": "analysis_success",
@@ -406,7 +398,7 @@ def _synthesize_timeout_response(
         ),
         "detailed_analysis": {
             "visual_changes": [
-                "AI analysis timed out; severity derived from comparator diff data"
+                f"AI analysis timed out; severity derived from comparator diff data: {reason_text}"
             ],
             "functional_impact": [
                 "Classification generated from structured diff; may be incomplete"

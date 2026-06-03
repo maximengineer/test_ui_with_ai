@@ -200,6 +200,12 @@ def load_screenshots(
     max_dim = settings.ai_max_screenshot_dimension
     for key, file_path in screenshot_files.items():
         try:
+            screenshots[f"{key}_path"] = str(file_path.absolute())
+            if settings.ai_redact_screenshots:
+                screenshots[f"{key}_redacted"] = True
+                logger.debug(f"Omitted {key} screenshot from AI payload: {file_path}")
+                continue
+
             raw = file_path.read_bytes()
             resized = _resize_image_for_ai(raw, max_dim)
             if len(resized) < len(raw):
@@ -207,7 +213,6 @@ def load_screenshots(
                     f"Resized {key} screenshot: {len(raw):,} → {len(resized):,} bytes"
                 )
             screenshots[f"{key}_b64"] = base64.b64encode(resized).decode("utf-8")
-            screenshots[f"{key}_path"] = str(file_path.absolute())
             logger.debug(f"Loaded {key} screenshot: {file_path}")
         except OSError as e:
             logger.error(f"Error loading {key} screenshot {file_path}: {e}")

@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pytest
 
+from test_ui.config import settings
 from test_ui.report import loader
 
 
@@ -164,3 +165,27 @@ def test_load_structured_data_raises_on_contract_validation_error(tmp_path):
 
     with pytest.raises(ValueError, match="html_changes.changes_detected"):
         loader.load_structured_data(diffs)
+
+
+def test_load_screenshots_can_omit_ai_base64_when_redaction_enabled(
+    tmp_path, monkeypatch
+):
+    """Screenshot redaction keeps local paths but omits AI payload bodies."""
+    monkeypatch.setattr(settings, "ai_redact_screenshots", True)
+    url_dir = tmp_path / "site"
+    diffs = url_dir / "diffs"
+    diffs.mkdir(parents=True)
+    # Minimal valid 1x1 PNG.
+    (diffs / "visual_diff.png").write_bytes(
+        bytes.fromhex(
+            "89504e470d0a1a0a0000000d4948445200000001000000010806000000"
+            "1f15c4890000000a49444154789c6360000002000100ffff030000060005"
+            "57bfab0000000049454e44ae426082"
+        )
+    )
+
+    screenshots = loader.load_screenshots(url_dir)
+
+    assert "visual_diff_path" in screenshots
+    assert screenshots["visual_diff_redacted"] is True
+    assert "visual_diff_b64" not in screenshots

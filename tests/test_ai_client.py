@@ -23,6 +23,7 @@ import pytest
 import respx
 
 from test_ui.contracts.ai_contract import SCHEMA_VERSION
+from test_ui.config import settings
 from test_ui.report.ai_client import AIClient
 
 
@@ -197,6 +198,62 @@ def test_create_request_drops_loader_only_keys():
     )
     assert "metadata" not in req["structured_data"]
     assert "visual_diff_image" not in req["structured_data"]
+
+
+def test_create_request_redacts_structured_secrets_by_default(monkeypatch):
+    """Structured text sent to the AI should mask obvious secrets."""
+    monkeypatch.setattr(settings, "ai_redact_structured_data", True)
+    fake_b64 = base64.b64encode(b"png").decode()
+    secret_snippet = (
+        "fetch('/x', {headers: {Authorization: 'Bearer abc.def.secret'}}); "
+        "const api_key=sk_live_123456; "
+        "const password=\"quoted-secret\"; "
+        "const basic='Basic dXNlcjpwYXNz'; "
+        "contact admin@example.com"
+    )
+    structured_data = {
+        "change_summary": {
+            "overall_assessment": {},
+            "change_categories": {},
+            "affected_components": [],
+            "recommendation": "Email admin@example.com",
+            "ai_analysis_priority": "low",
+        },
+        "html_changes": {
+            "changes_detected": False,
+            "change_types": [],
+            "changes": [],
+            "summary": {},
+        },
+        "css_changes": {
+            "changes_detected": False,
+            "change_types": [],
+            "files_changed": [],
+            "changes": [],
+            "summary": {},
+        },
+        "js_changes": {
+            "changes_detected": True,
+            "change_types": ["functionality"],
+            "files_changed": ["app.js"],
+            "changes": [{"code_snippet": secret_snippet}],
+            "summary": {},
+        },
+    }
+
+    req = AIClient.create_request(
+        "https://x.example", structured_data, {"baseline_b64": fake_b64}
+    )
+
+    dumped = json.dumps(req["structured_data"])
+    assert "abc.def.secret" not in dumped
+    assert "sk_live_123456" not in dumped
+    assert "quoted-secret" not in dumped
+    assert "dXNlcjpwYXNz" not in dumped
+    assert "admin@example.com" not in dumped
+    assert "[REDACTED]" in dumped
+    assert "[REDACTED_EMAIL]" in dumped
+    assert structured_data["js_changes"]["changes"][0]["code_snippet"] == secret_snippet
 
 
 # ---------------------------------------------------------------------------

@@ -36,6 +36,7 @@ from ..contracts.ai_contract import (
     Screenshots,
 )
 from . import models
+from .redaction import redact_structured_data
 
 
 class AIClient:
@@ -71,7 +72,12 @@ class AIClient:
             current=screenshots.get("current_b64"),
             visual_diff=screenshots.get("visual_diff_b64"),
         )
-        sd = models.validate_structured_data_for_ai(structured_data)
+        ai_structured_data = (
+            redact_structured_data(structured_data)
+            if settings.ai_redact_structured_data
+            else structured_data
+        )
+        sd = models.validate_structured_data_for_ai(ai_structured_data)
         request = AIAnalysisRequest(
             request_id=str(uuid.uuid4()),
             url=url,
