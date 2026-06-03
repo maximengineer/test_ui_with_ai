@@ -18,6 +18,7 @@ import yaml
 from rich.console import Console
 
 from ..config import settings
+from ..crawler import engine as crawler_engine
 from .orchestrator import Orchestrator
 
 
@@ -116,8 +117,11 @@ def snapshot(ctx, output, run_id):
             )
 
     try:
-        asyncio.run(_run())
+        all_success = asyncio.run(_run())
     except PreconditionFailed as e:
+        console.print(f"[red]❌ {e}[/red]")
+        raise click.Abort() from e
+    except crawler_engine.CrawlFailedError as e:
         console.print(f"[red]❌ {e}[/red]")
         raise click.Abort() from e
     except ValueError as e:
@@ -125,6 +129,9 @@ def snapshot(ctx, output, run_id):
         # friendly Click abort instead of a Python stack trace.
         console.print(f"[red]❌ {e}[/red]")
         raise click.Abort() from e
+    if not all_success:
+        console.print("[red]❌ One or more baseline site crawls failed[/red]")
+        raise click.Abort()
     console.print(
         f"[green]Baseline run published under '{output}/<date>/<run_id>/'[/green]"
     )
@@ -156,14 +163,20 @@ def current(ctx, output, run_id):
             await orchestrator.create_current(sites, output, run_id=run_id)
 
     try:
-        asyncio.run(_run())
+        all_success = asyncio.run(_run())
     except PreconditionFailed as e:
+        console.print(f"[red]❌ {e}[/red]")
+        raise click.Abort() from e
+    except crawler_engine.CrawlFailedError as e:
         console.print(f"[red]❌ {e}[/red]")
         raise click.Abort() from e
     except ValueError as e:
         # Engine raises ValueError on invalid --run-id.
         console.print(f"[red]❌ {e}[/red]")
         raise click.Abort() from e
+    if not all_success:
+        console.print("[red]❌ One or more current site crawls failed[/red]")
+        raise click.Abort()
     console.print(
         f"[green]Current run published under '{output}/<date>/<run_id>/'[/green]"
     )

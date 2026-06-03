@@ -5,6 +5,7 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
+from test_ui.config import settings
 from test_ui.common.sites import Site, load_sites, slugify
 
 
@@ -68,6 +69,40 @@ def test_site_rejects_unknown_field():
     """extra='forbid' - silent typos in sites.yml become loud Pydantic errors."""
     with pytest.raises(ValidationError):
         Site(id="x", name="x", url="https://x", color="red")
+
+
+def test_site_rejects_private_network_url_by_default():
+    """Default crawler URL posture blocks loopback/private SSRF targets."""
+    with pytest.raises(ValidationError, match="not allowed"):
+        Site(id="x", name="x", url="http://127.0.0.1/admin")
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://user:pass@example.com/",
+        "http://0177.0.0.1/admin",
+        "http://0x7f.0.0.1/admin",
+        "http://%31%32%37.0.0.1/admin",
+    ],
+)
+def test_site_rejects_credentialed_or_obfuscated_private_urls(url):
+    with pytest.raises(ValidationError):
+        Site(id="x", name="x", url=url)
+
+
+def test_site_allows_public_ip_literal():
+    site = Site(id="x", name="x", url="https://8.8.8.8/")
+
+    assert site.url == "https://8.8.8.8/"
+
+
+def test_site_allows_private_network_url_with_explicit_override(monkeypatch):
+    monkeypatch.setattr(settings, "allow_private_site_urls", True)
+
+    site = Site(id="x", name="x", url="http://127.0.0.1/admin")
+
+    assert site.url == "http://127.0.0.1/admin"
 
 
 # ---------------------------------------------------------------------------

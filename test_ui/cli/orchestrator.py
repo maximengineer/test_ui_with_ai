@@ -14,6 +14,8 @@ from pathlib import Path
 import httpx
 from rich.console import Console
 
+from ..common.manifest import read_manifest
+from ..common.sites import site_dir_name
 from ..comparator.engine import ComparatorEngine
 from ..config import settings
 from ..crawler.engine import main as crawler_main
@@ -120,6 +122,7 @@ class Orchestrator:
                 f"Run `afr snapshot --output {baseline_dir}` first."
             )
         console.print(f"[cyan]Using latest baseline: {actual_baseline_dir.name}[/cyan]")
+        _require_crawl_run_covers_sites(actual_baseline_dir, sites, kind_label="baseline")
         baseline_path = actual_baseline_dir
 
         actual_current_dir = self.comparator.find_latest_current(current_dir)
@@ -129,6 +132,7 @@ class Orchestrator:
                 f"Run `afr current --output {current_dir}` first."
             )
         console.print(f"[cyan]Using latest current: {actual_current_dir.name}[/cyan]")
+        _require_crawl_run_covers_sites(actual_current_dir, sites, kind_label="current")
         current_path = actual_current_dir
 
         console.print(
@@ -326,6 +330,28 @@ class Orchestrator:
         console.print(f"[green]🎉 Report run {run_id} published[/green]")
         console.print(f"[blue]📄 Report location: {published_path}[/blue]")
         return published_path
+
+
+def _require_crawl_run_covers_sites(
+    run_dir: Path, sites: list[dict], *, kind_label: str
+) -> None:
+    """Reject complete-looking crawl runs that are missing configured sites."""
+    from ..common.preconditions import PreconditionFailed
+
+    manifest = read_manifest(run_dir)
+    expected = [site_dir_name(site) for site in sites]
+    missing = [
+        name for name in expected if not (run_dir / name / "index.html").exists()
+    ]
+
+    if manifest.url_count != len(expected) or missing:
+        preview = ", ".join(missing[:5])
+        suffix = f" Missing site dirs: {preview}" if preview else ""
+        raise PreconditionFailed(
+            f"Latest {kind_label} run {run_dir.name} is incomplete: "
+            f"manifest url_count={manifest.url_count}, expected={len(expected)}."
+            f"{suffix} Re-run the {kind_label} step."
+        )
 
 
 __all__ = ["Orchestrator"]

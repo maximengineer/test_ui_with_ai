@@ -100,6 +100,15 @@ def test_add_site_rejects_empty_url(tmp_path):
     assert p.read_text(encoding="utf-8") == "sites: []\n"
 
 
+def test_add_site_rejects_private_network_url_without_touching_file(tmp_path):
+    """SSRF protection must fail before the YAML write path."""
+    p = _seed(tmp_path, "sites: []\n")
+    with pytest.raises(ValidationError, match="not allowed"):
+        add_site(p, name="Router", url="http://192.168.1.1")
+
+    assert p.read_text(encoding="utf-8") == "sites: []\n"
+
+
 def test_add_site_rolls_back_when_existing_corruption_blocks_full_load(tmp_path):
     """Round-2 review HIGH #4 fix: a successful add MUST be rolled back
     if it produces a file that fails the strict loader (e.g. because a

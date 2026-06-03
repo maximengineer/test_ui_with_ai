@@ -13,6 +13,9 @@ from pathlib import Path
 from urllib.parse import urljoin, urlparse
 from crawl4ai import AsyncWebCrawler, BrowserConfig, CrawlerRunConfig, CacheMode
 
+from .. import network_sandbox
+from ..config import settings
+from .url_preflight import assert_url_allowed_for_crawl
 
 # Phase A.3: canonical implementation moved to test_ui/common/url_id.py.
 # This re-export keeps the crawler's historical `sanitize_filename` name
@@ -24,6 +27,10 @@ from ..common.url_id import sanitize_filename  # noqa: E402,F401
 # crawler and comparator can't drift on the convention. Re-exported here
 # under the historical name for the call sites in main() below.
 from ..common.sites import site_dir_name as _site_dir_name  # noqa: E402,F401
+
+
+class CrawlFailedError(RuntimeError):
+    """Raised when a crawl run finishes with one or more failed sites."""
 
 
 class CrawlerEngine:
@@ -39,6 +46,11 @@ class CrawlerEngine:
         - JS files in js/ folder
         - Images in images/ folder
         """
+        # CDN-backed hosts can rotate IPs during a long crawl. Refresh the
+        # Docker egress allowlist immediately before each site fetch so the
+        # firewall tracks the latest DNS answers without broad CDN CIDRs.
+        network_sandbox.configure_from_env()
+
         output_path = output_dir / name
         output_path.mkdir(parents=True, exist_ok=True)
 
@@ -50,6 +62,7 @@ class CrawlerEngine:
         js_dir.mkdir(exist_ok=True)
         images_dir.mkdir(exist_ok=True)
 
+        url = await self._preflight_url(url)
         print(f"Crawling {url} with resource downloading...")
 
         # Reset downloaded resources tracker
@@ -215,9 +228,12 @@ class CrawlerEngine:
             if url in self.downloaded_resources:
                 return self.downloaded_resources[url]
 
+            safe_url = await self._preflight_url(url)
             async with aiohttp.ClientSession() as session:
                 async with session.get(
-                    url, timeout=aiohttp.ClientTimeout(total=10)
+                    safe_url,
+                    timeout=aiohttp.ClientTimeout(total=10),
+                    allow_redirects=False,
                 ) as response:
                     if response.status == 200:
                         content = await response.read()
@@ -233,6 +249,16 @@ class CrawlerEngine:
             print(f"✗ Error downloading {url}: {e}")
             self.downloaded_resources[url] = False
             return False
+
+    async def _preflight_url(self, url: str) -> str:
+        """Apply crawler-time SSRF checks before browser/resource fetches."""
+        return await assert_url_allowed_for_crawl(
+            url,
+            allow_private=settings.allow_private_site_urls,
+            check_dns=settings.site_url_check_dns,
+            check_redirects=settings.site_url_check_redirects,
+            max_redirects=settings.site_url_redirect_limit,
+        )
 
     async def _save_screenshot(self, screenshot_base64: str, output_path: Path):
         """Save screenshot from base64 data with compression optimization"""
@@ -535,6 +561,7 @@ async def main(
     ) as ctx:
         all_success = True
         crawled_count = 0
+        failed_count = 0
         for site in sites:
             url = site["url"]
             name = _site_dir_name(site)
@@ -545,6 +572,11 @@ async def main(
             except Exception as e:
                 print(f"✗ Error crawling {url}: {e}")
                 all_success = False
+                failed_count += 1
+        if failed_count:
+            raise CrawlFailedError(
+                f"{kind} crawl failed for {failed_count} of {len(sites)} sites"
+            )
         ctx.complete(url_count=crawled_count)
 
     # `latest` symlink update happens AFTER the rename so it points at the

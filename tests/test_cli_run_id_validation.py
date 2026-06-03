@@ -12,10 +12,13 @@ that accepts `--run-id`.
 
 from __future__ import annotations
 
+from contextlib import asynccontextmanager
+
 import pytest
 from click.testing import CliRunner
 
 from test_ui.cli import cli
+from test_ui.cli import commands as cli_commands
 
 
 @pytest.fixture
@@ -95,6 +98,44 @@ def test_compare_invalid_run_id_aborts(tmp_path, isolated_sites, monkeypatch):
     # The validation in compare lives in the engine but may not fire
     # before the precondition check (no complete baseline yet). Either
     # message is fine - what we MUST NOT see is a Python traceback.
+    assert "Traceback" not in result.output
+
+
+@pytest.mark.parametrize(
+    ("command", "message"),
+    [
+        ("snapshot", "One or more baseline site crawls failed"),
+        ("current", "One or more current site crawls failed"),
+    ],
+)
+def test_snapshot_and_current_abort_when_crawler_reports_partial_failure(
+    tmp_path, isolated_sites, monkeypatch, command, message
+):
+    class FakeOrchestrator:
+        async def create_baseline(self, sites, output, is_baseline=True, run_id=None):
+            return False
+
+        async def create_current(self, sites, output, run_id=None):
+            return False
+
+    @asynccontextmanager
+    async def fake_open_orchestrator():
+        yield FakeOrchestrator()
+
+    monkeypatch.setattr(cli_commands, "_open_orchestrator", fake_open_orchestrator)
+
+    result = _invoke(
+        [
+            "--sites-file",
+            str(isolated_sites),
+            command,
+            "--output",
+            str(tmp_path / command),
+        ]
+    )
+
+    assert result.exit_code != 0
+    assert message in result.output
     assert "Traceback" not in result.output
 
 

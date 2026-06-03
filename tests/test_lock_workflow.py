@@ -98,6 +98,36 @@ async def test_crawler_runs_after_stale_lock_cleared(crawler_setup, monkeypatch)
     await crawler_engine.main(sites, str(output_dir), is_baseline=True)
 
 
+@pytest.mark.asyncio
+async def test_partial_crawl_fails_manifest_and_does_not_publish(
+    crawler_setup, monkeypatch
+):
+    output_dir = crawler_setup / "baseline"
+
+    async def _save_or_fail(self, url, name, output_dir):
+        if "bad.example" in url:
+            raise RuntimeError("network failed")
+
+    monkeypatch.setattr(crawler_engine.CrawlerEngine, "save_assets", _save_or_fail)
+
+    sites = [{"url": "https://ok.example"}, {"url": "https://bad.example"}]
+    with pytest.raises(crawler_engine.CrawlFailedError, match="failed for 1 of 2"):
+        await crawler_engine.main(sites, str(output_dir), is_baseline=True)
+
+    date_dir = output_dir / settings.get_current_date()
+    published = [
+        c for c in date_dir.iterdir() if c.is_dir() and not c.name.startswith(".tmp-")
+    ]
+    tmp_runs = [c for c in date_dir.iterdir() if c.is_dir() and c.name.startswith(".tmp-")]
+
+    assert published == []
+    assert len(tmp_runs) == 1
+    assert '"status":"failed"' in (
+        tmp_runs[0] / "manifest.json"
+    ).read_text().replace(" ", "")
+    assert not (date_dir / "latest").exists()
+
+
 # ---------------------------------------------------------------------------
 # Comparator orchestrator refuses if no complete baseline/current
 # ---------------------------------------------------------------------------
@@ -141,6 +171,9 @@ async def test_compare_with_baseline_refuses_when_baseline_exists_but_no_current
     baseline_date = baseline_root / "01-01-2099"
     baseline_run = baseline_date / "01HXX0000000000000000000A0"
     baseline_run.mkdir(parents=True)
+    baseline_site = baseline_run / "example.com"
+    baseline_site.mkdir()
+    (baseline_site / "index.html").write_text("<html></html>", encoding="utf-8")
     write_manifest(
         baseline_run,
         Manifest(
@@ -149,6 +182,7 @@ async def test_compare_with_baseline_refuses_when_baseline_exists_but_no_current
             started_at="01-01-2099 00:00:00",
             status="complete",
             finished_at="01-01-2099 00:00:01",
+            url_count=1,
         ),
     )
 
@@ -163,6 +197,72 @@ async def test_compare_with_baseline_refuses_when_baseline_exists_but_no_current
                 current_dir=tmp_path / "missing-current",
                 output_dir=tmp_path / "out",
                 sites=[{"url": "https://example.com"}],
+            )
+
+
+@pytest.mark.asyncio
+async def test_compare_with_baseline_refuses_complete_manifest_with_missing_sites(
+    tmp_path, monkeypatch
+):
+    """Legacy partial crawls could publish status=complete with too few sites."""
+    import httpx
+
+    from test_ui.common.manifest import Manifest, write_manifest
+
+    baseline_root = tmp_path / "baseline"
+    current_root = tmp_path / "current"
+    date = "01-01-2099"
+    baseline_run = baseline_root / date / "01HXX0000000000000000000A0"
+    current_run = current_root / date / "01HXX0000000000000000000B0"
+    baseline_run.mkdir(parents=True)
+    current_run.mkdir(parents=True)
+
+    sites = [
+        {"id": "1", "url": "https://example.com/one"},
+        {"id": "2", "url": "https://example.com/two"},
+    ]
+    for run_dir in (baseline_run, current_run):
+        site_one = run_dir / "1"
+        site_one.mkdir()
+        (site_one / "index.html").write_text("<html></html>", encoding="utf-8")
+    site_two = baseline_run / "2"
+    site_two.mkdir()
+    (site_two / "index.html").write_text("<html></html>", encoding="utf-8")
+
+    write_manifest(
+        baseline_run,
+        Manifest(
+            run_id="01HXX0000000000000000000A0",
+            kind="baseline",
+            started_at="01-01-2099 00:00:00",
+            status="complete",
+            finished_at="01-01-2099 00:00:01",
+            url_count=2,
+        ),
+    )
+    write_manifest(
+        current_run,
+        Manifest(
+            run_id="01HXX0000000000000000000B0",
+            kind="current",
+            started_at="01-01-2099 00:00:00",
+            status="complete",
+            finished_at="01-01-2099 00:00:01",
+            url_count=1,
+        ),
+    )
+
+    monkeypatch.setattr(settings, "report_dir", tmp_path / "report")
+    monkeypatch.setattr(settings, "comparator_dir", tmp_path / "comparator")
+
+    async with httpx.AsyncClient() as client:
+        orch = Orchestrator(client=client, ai_analyzer_url="http://test.local")
+        with pytest.raises(PreconditionFailed, match="Latest current run .*incomplete"):
+            await orch.compare_with_baseline(
+                baseline_dir=baseline_root,
+                current_dir=current_root,
+                output_dir=tmp_path / "out",
+                sites=sites,
             )
 
 

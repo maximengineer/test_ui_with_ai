@@ -33,9 +33,11 @@ from pathlib import Path
 
 import yaml
 from loguru import logger
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from ..config import settings
 from .url_id import url_to_dirname
+from .url_safety import UnsafeCrawlURL, validate_crawl_url
 
 
 _SLUG_RE = re.compile(r"[^a-z0-9]+")
@@ -72,6 +74,16 @@ class Site(BaseModel):
     id: str = Field(min_length=1, max_length=200, pattern=r"^[a-z0-9][a-z0-9_-]*$")
     name: str = Field(min_length=1, max_length=200)
     url: str = Field(min_length=1, max_length=2048)
+
+    @field_validator("url")
+    @classmethod
+    def _validate_crawl_target(cls, value: str) -> str:
+        try:
+            return validate_crawl_url(
+                value, allow_private=settings.allow_private_site_urls
+            )
+        except UnsafeCrawlURL as e:
+            raise ValueError(str(e)) from e
 
 
 def dedupe_slug(candidate: str, taken: set[str]) -> str:
